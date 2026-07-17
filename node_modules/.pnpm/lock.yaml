@@ -11,6 +11,9 @@ importers:
       '@playwright/cli':
         specifier: ^0.1.17
         version: 0.1.17
+      playwright:
+        specifier: 1.62.0-alpha-1783623505000
+        version: 1.62.0-alpha-1783623505000
 
 packages:
 
