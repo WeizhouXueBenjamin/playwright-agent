@@ -36,6 +36,8 @@ function buildSemanticElement(element) {
 		required: element.required,
 		disabled: element.disabled,
 		readonly: element.readonly,
+		state: element.state || {},
+		validation: element.validation || { valid: true, message: "" },
 		options: element.options,
 		bounds: element.bounds,
 		semanticPath: element.semanticPath,

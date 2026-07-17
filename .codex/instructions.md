@@ -44,6 +44,8 @@ Playwright is only the browser execution engine.
 
 The intelligence should come from reasoning, planning, observation, and verification rather than hardcoded selectors.
 
+The Fact Store is authoritative and contains only verified facts. The Reasoning Engine is and may be wrong. Every reasoning result must be validated against browser observations before updating the Fact Store.
+
 ---
 
 # First Principles

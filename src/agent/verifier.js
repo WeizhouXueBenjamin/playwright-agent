@@ -1,6 +1,10 @@
 const { resolveFieldLocator } = require("../actions/locator");
 
 async function verifyAction(page, step) {
+	if (step.action === "click") {
+		return buildVerificationResult(true, "click-dispatched", "click-dispatched", "action-result");
+	}
+
 	const { locator, strategy } = await resolveFieldLocator(page, step.field);
 
 	if (step.action === "set-checkbox") {

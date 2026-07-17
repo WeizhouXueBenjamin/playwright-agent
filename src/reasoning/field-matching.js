@@ -123,6 +123,8 @@ function describeField(field) {
 		placeholder: field.placeholder || "",
 		required: field.required,
 		inputType: field.inputType,
+		state: field.state || {},
+		validation: field.validation || { valid: true, message: "" },
 		options: field.options || [],
 	};
 }

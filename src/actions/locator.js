@@ -14,6 +14,24 @@ function buildLocatorStrategies(page, field) {
 	const labels = getFieldLabels(field);
 	const strategies = [];
 
+	if (field.kind === "button" && field.label && field.label.text) {
+		strategies.push({
+			name: `button:${field.label.text}`,
+			locator: page.getByRole("button", { name: field.label.text, exact: true }),
+		});
+	}
+
+	if (field.role && field.label && field.label.text) {
+		strategies.push({
+			name: `role:${field.role}:${field.label.text}`,
+			locator: page.getByRole(field.role, { name: field.label.text, exact: true }),
+		});
+	}
+
+	if (field.kind === "button") {
+		return strategies;
+	}
+
 	for (const label of labels) {
 		strategies.push({
 			name: `label:${label}`,

@@ -67,6 +67,8 @@ async function captureInteractiveElements(page) {
 				ariaLabel: element.getAttribute("aria-label") || "",
 				ariaLabelledBy: element.getAttribute("aria-labelledby") || "",
 				text: normalizeText(element.innerText || element.textContent || ""),
+				state: getElementState(element),
+				validation: getElementValidation(element),
 				labels,
 				options: collectOptions(element),
 				bounds: {
@@ -159,6 +161,56 @@ async function captureInteractiveElements(page) {
 				valuePresent: Boolean(option.value),
 				disabled: option.disabled,
 			}));
+		}
+
+		function getElementState(element) {
+			const tagName = element.tagName.toLowerCase();
+			const type = (element.getAttribute("type") || "").toLowerCase();
+
+			if (type === "checkbox" || type === "radio") {
+				return { checked: Boolean(element.checked) };
+			}
+
+			if (tagName === "select") {
+				const selected = element.options[element.selectedIndex];
+				return {
+					value: element.value,
+					selectedLabel: selected ? normalizeText(selected.label || selected.textContent || "") : "",
+				};
+			}
+
+			if (tagName === "input" || tagName === "textarea") {
+				if (type === "file") {
+					return {
+						files: Array.from(element.files || []).map((file) => ({
+							name: file.name,
+							size: file.size,
+						})),
+					};
+				}
+
+				return { value: element.value };
+			}
+
+			if (element.isContentEditable) {
+				return { value: normalizeText(element.innerText || element.textContent || "") };
+			}
+
+			return {};
+		}
+
+		function getElementValidation(element) {
+			if (!("validity" in element)) {
+				return {
+					valid: true,
+					message: "",
+				};
+			}
+
+			return {
+				valid: element.validity.valid,
+				message: element.validationMessage || "",
+			};
 		}
 
 		function getFormLabel(form) {
