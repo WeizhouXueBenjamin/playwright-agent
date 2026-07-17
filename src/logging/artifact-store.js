@@ -3,7 +3,7 @@ const path = require("node:path");
 
 async function createRunLogDir(baseDir = "logs", date = new Date()) {
 	const runId = formatRunId(date);
-	const runDir = path.join(process.cwd(), baseDir, runId);
+	const runDir = path.join(resolveBaseDir(baseDir), runId);
 	await fs.mkdir(runDir, { recursive: true });
 	return { runId, runDir };
 }
@@ -20,6 +20,11 @@ async function writeJsonArtifact(runDir, filename, content) {
 
 function formatRunId(date) {
 	return `run-${date.toISOString().replace(/[:.]/g, "-")}`;
+}
+
+function resolveBaseDir(baseDir) {
+	if (path.isAbsolute(baseDir)) return baseDir;
+	return path.join(process.cwd(), baseDir);
 }
 
 module.exports = {

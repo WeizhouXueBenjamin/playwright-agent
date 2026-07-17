@@ -11,15 +11,16 @@ class BrowserAIAgent {
 
 	async completeJobApplication(input) {
 		const profile = buildApplicationProfile(input);
+		const goal = (input.options && input.options.goal) || this.options.goal || JOB_APPLICATION_GOAL;
 		const controller = new AgentController({
-			goal: JOB_APPLICATION_GOAL,
+			goal,
 			...this.options,
 			...(input.options || {}),
 		});
 		const result = await controller.run(input.url, profile);
 
 		return {
-			goal: JOB_APPLICATION_GOAL,
+			goal,
 			status: result.status,
 			reason: result.reason,
 			runtimeState: result.runtimeState,

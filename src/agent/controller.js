@@ -42,24 +42,30 @@ class AgentController {
 		for (let cycle = 1; cycle <= this.options.maxCycles; cycle += 1) {
 			const observation = await observePage(page);
 			stateManager.applyObservation(observation);
+			const observedRuntimeState = stateManager.getState();
 			const decision = determineNextAction(observation.semanticPage, profile, {
 				...this.options,
-				runtimeState: stateManager.getState(),
+				runtimeState: observedRuntimeState,
 			});
 			const terminalState = detectTerminalState(observation.semanticPage, decision);
 
 			const lifecycleEntry = {
 				cycle,
 				phase: "observe-think",
+				timestamp: new Date().toISOString(),
 				url: observation.semanticPage.url,
 				pageSummary: observation.semanticPage.summary,
 				decision: summarizeDecision(decision),
 				terminalState,
+				runtimeStateSnapshot: observedRuntimeState,
 			};
 
 			if (terminalState.reached) {
 				stateManager.setExecutionStatus(terminalState.status);
-				lifecycle.push(lifecycleEntry);
+				lifecycle.push({
+					...lifecycleEntry,
+					runtimeStateSnapshot: stateManager.getState(),
+				});
 				return {
 					status: terminalState.status,
 					reason: terminalState.reason,
@@ -75,7 +81,9 @@ class AgentController {
 			lifecycle.push({
 				...lifecycleEntry,
 				phase: "observe-think-act-verify",
+				timestamp: new Date().toISOString(),
 				actionResult,
+				runtimeStateSnapshot: stateManager.getState(),
 			});
 
 			if (!actionResult.verification.ok) {
@@ -88,6 +96,7 @@ class AgentController {
 					stateManager,
 				});
 				lifecycle[lifecycle.length - 1].recovery = summarizeRecovery(recovery);
+				lifecycle[lifecycle.length - 1].runtimeStateSnapshot = stateManager.getState();
 
 				if (recovery.status === "recovered") {
 					continue;
@@ -97,6 +106,7 @@ class AgentController {
 					? "needs-user-confirmation"
 					: "recovery-failed";
 				stateManager.setExecutionStatus(terminalStatus);
+				lifecycle[lifecycle.length - 1].runtimeStateSnapshot = stateManager.getState();
 
 				return {
 					status: terminalStatus,

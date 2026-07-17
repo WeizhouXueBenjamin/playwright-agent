@@ -17,6 +17,20 @@ const FINAL_SUBMIT_PATTERNS = [
 	/\bconfirm\b/i,
 ];
 
+const IRREVERSIBLE_ACTION_PATTERNS = [
+	...FINAL_SUBMIT_PATTERNS,
+	/\bcreate account\b/i,
+	/\bsign up\b/i,
+	/\bregister\b/i,
+	/\bpay\b/i,
+	/\bpurchase\b/i,
+	/\bcheckout\b/i,
+	/\bauthori[sz]e\b/i,
+	/\bcontinue with\b/i,
+	/\bsign in with\b/i,
+	/\blog in with\b/i,
+];
+
 function determineNextAction(semanticPage, profile, options = {}) {
 	const adaptiveReasoning = reasonAboutPage(semanticPage, options.runtimeState || {});
 	const adaptiveDecision = buildAdaptiveDecision(adaptiveReasoning);
@@ -82,6 +96,18 @@ function buildAdaptiveDecision(adaptiveReasoning) {
 	}
 
 	if (objective.type !== "action" || !objective.target) return null;
+	if (isIrreversibleTarget(objective.target)) {
+		return {
+			type: "needs-review",
+			reason: "irreversible-action-needs-confirmation",
+			details: {
+				pageIntent: adaptiveReasoning.pageIntent,
+				description: objective.description,
+				target: objective.target,
+			},
+			context: { adaptiveReasoning },
+		};
+	}
 
 	return {
 		type: "action",
@@ -103,6 +129,11 @@ function buildAdaptiveDecision(adaptiveReasoning) {
 		reasoning: objective.description,
 		context: { adaptiveReasoning },
 	};
+}
+
+function isIrreversibleTarget(target) {
+	const label = target.label && target.label.text ? target.label.text : "";
+	return IRREVERSIBLE_ACTION_PATTERNS.some((pattern) => pattern.test(label));
 }
 
 function isStepAlreadySatisfied(step) {
@@ -133,7 +164,7 @@ function findSafeNavigationStep(semanticPage) {
 	const button = (semanticPage.interactiveElements || []).find((element) => {
 		if (element.kind !== "button" || element.disabled) return false;
 		const label = element.label && element.label.text ? element.label.text : "";
-		if (FINAL_SUBMIT_PATTERNS.some((pattern) => pattern.test(label))) return false;
+		if (IRREVERSIBLE_ACTION_PATTERNS.some((pattern) => pattern.test(label))) return false;
 		return SAFE_NAVIGATION_PATTERNS.some((pattern) => pattern.test(label));
 	});
 
