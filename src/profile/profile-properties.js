@@ -47,6 +47,7 @@ function flattenProfile(value, path = []) {
 		{
 			path: path.join("."),
 			key: path[path.length - 1],
+			value,
 			valueType: value === null ? "null" : typeof value,
 			valuePresent: value !== undefined && value !== null && String(value).trim() !== "",
 		},

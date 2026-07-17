@@ -27,6 +27,7 @@ function matchFieldsToProfile(semanticPage, profile, options = {}) {
 				path: bestCandidate.path,
 				valueType: bestCandidate.valueType,
 				valuePresent: bestCandidate.valuePresent,
+				value: bestCandidate.value,
 			},
 			confidenceScore: bestCandidate.confidenceScore,
 			reasoning: bestCandidate.reasoning,
@@ -71,6 +72,7 @@ function scoreCandidate(field, property) {
 
 	return {
 		path: property.path,
+		value: property.value,
 		valueType: property.valueType,
 		valuePresent: property.valuePresent,
 		confidenceScore: Math.round(best.score * 100),
@@ -117,8 +119,11 @@ function describeField(field) {
 		id: field.id,
 		kind: field.kind,
 		label: field.label,
+		labelCandidates: field.labelCandidates || [],
+		placeholder: field.placeholder || "",
 		required: field.required,
 		inputType: field.inputType,
+		options: field.options || [],
 	};
 }
 

@@ -23,6 +23,20 @@ async function waitForPageStable(page, options = {}) {
 	};
 }
 
+async function waitForInteractionStable(page, options = {}) {
+	const {
+		domQuietMs = 300,
+		domStableTimeoutMs = 3000,
+	} = options;
+
+	const domStable = await waitForDomQuiet(page, domQuietMs, domStableTimeoutMs);
+
+	return {
+		domStable,
+		domQuietMs,
+	};
+}
+
 async function waitForDomQuiet(page, quietMs, timeoutMs) {
 	return page.evaluate(
 		({ quietMs, timeoutMs }) =>
@@ -59,5 +73,6 @@ async function waitForDomQuiet(page, quietMs, timeoutMs) {
 }
 
 module.exports = {
+	waitForInteractionStable,
 	waitForPageStable,
 };

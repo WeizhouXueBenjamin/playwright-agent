@@ -1,8 +1,12 @@
 {
 	"scripts": {
 		"capture": "node src/cli/capture-page.js",
+		"execute-plan": "node src/cli/execute-plan.js",
 		"match-fields": "node src/cli/match-fields.js",
-		"test:field-matching": "node src/reasoning/field-matching.test.js"
+		"plan-actions": "node src/cli/plan-actions.js",
+		"test:executor": "node src/agent/executor.test.js",
+		"test:field-matching": "node src/reasoning/field-matching.test.js",
+		"test:planner": "node src/agent/planner.test.js"
 	},
 	"devDependencies": {
 		"@playwright/cli": "^0.1.17",
