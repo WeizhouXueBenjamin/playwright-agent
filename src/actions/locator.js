@@ -53,6 +53,13 @@ function buildLocatorStrategies(page, field) {
 		});
 	}
 
+	if (field.kind === "file-upload") {
+		strategies.push({
+			name: "input:file",
+			locator: page.locator("input[type='file']"),
+		});
+	}
+
 	return strategies;
 }
 

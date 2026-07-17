@@ -81,6 +81,7 @@ function createActionStep(match, order) {
 
 function inferAction(field) {
 	if (field.kind === "checkbox") return "set-checkbox";
+	if (field.kind === "file-upload") return "upload-file";
 	if (field.kind === "radio") return "select-option";
 	if (field.kind === "selection") return "select-option";
 	if (field.kind === "editable") return "fill-text";
@@ -89,6 +90,7 @@ function inferAction(field) {
 
 function inferExpectedState(field) {
 	if (field.kind === "checkbox") return "checked-state-matches-profile-value";
+	if (field.kind === "file-upload") return "uploaded-file-matches-profile-value";
 	if (field.kind === "radio" || field.kind === "selection") return "selected-option-matches-profile-value";
 	return "field-value-matches-profile-value";
 }

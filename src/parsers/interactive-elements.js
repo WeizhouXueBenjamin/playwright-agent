@@ -239,6 +239,7 @@ async function captureInteractiveElements(page) {
 			const tagName = element.tagName.toLowerCase();
 			const type = (element.getAttribute("type") || "").toLowerCase();
 
+			if (type === "file") return "file-upload";
 			if (tagName === "textarea" || role === "textbox" || ["email", "password", "search", "tel", "text", "url"].includes(type)) return "text-input";
 			if (["checkbox", "radio"].includes(type)) return type;
 			if (tagName === "select" || role === "combobox" || role === "listbox") return "selection";

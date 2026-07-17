@@ -1,5 +1,6 @@
 const { buildExecutionPlan } = require("./planner");
 const { matchFieldsToProfile } = require("../reasoning/field-matching");
+const { reasonAboutPage } = require("../reasoning/adaptive-reasoning");
 
 const SAFE_NAVIGATION_PATTERNS = [
 	/\bcontinue\b/i,
@@ -17,6 +18,10 @@ const FINAL_SUBMIT_PATTERNS = [
 ];
 
 function determineNextAction(semanticPage, profile, options = {}) {
+	const adaptiveReasoning = reasonAboutPage(semanticPage, options.runtimeState || {});
+	const adaptiveDecision = buildAdaptiveDecision(adaptiveReasoning);
+	if (adaptiveDecision) return adaptiveDecision;
+
 	const matches = matchFieldsToProfile(semanticPage, profile, options.matching);
 	const plan = buildExecutionPlan(matches, options.planning);
 	const pendingStep = plan.steps.find((step) => !isStepAlreadySatisfied(step));
@@ -30,7 +35,7 @@ function determineNextAction(semanticPage, profile, options = {}) {
 				order: 1,
 			},
 			reasoning: pendingStep.reasoning,
-			context: { matches, plan },
+			context: { adaptiveReasoning, matches, plan },
 		};
 	}
 
@@ -40,7 +45,7 @@ function determineNextAction(semanticPage, profile, options = {}) {
 			type: "needs-review",
 			reason: "required-field-needs-review",
 			details: blockingReviewItem,
-			context: { matches, plan },
+			context: { adaptiveReasoning, matches, plan },
 		};
 	}
 
@@ -50,14 +55,53 @@ function determineNextAction(semanticPage, profile, options = {}) {
 			type: "action",
 			step: navigationStep,
 			reasoning: `Navigate using "${navigationStep.field.label.text}" after current fields are satisfied.`,
-			context: { matches, plan },
+			context: { adaptiveReasoning, matches, plan },
 		};
 	}
 
 	return {
 		type: "none",
 		reason: "No pending safe action found.",
-		context: { matches, plan },
+		context: { adaptiveReasoning, matches, plan },
+	};
+}
+
+function buildAdaptiveDecision(adaptiveReasoning) {
+	const objective = adaptiveReasoning.nextObjective;
+
+	if (objective.type === "needs-user" || objective.type === "needs-review") {
+		return {
+			type: "needs-review",
+			reason: objective.reason,
+			details: {
+				pageIntent: adaptiveReasoning.pageIntent,
+				description: objective.description,
+			},
+			context: { adaptiveReasoning },
+		};
+	}
+
+	if (objective.type !== "action" || !objective.target) return null;
+
+	return {
+		type: "action",
+		step: {
+			id: "adaptive-action",
+			order: 1,
+			action: "click",
+			field: objective.target,
+			profileProperty: null,
+			actionValue: true,
+			valuePreview: true,
+			confidenceScore: adaptiveReasoning.pageIntent.confidenceScore,
+			reasoning: objective.description,
+			verification: {
+				expectedState: "page-state-changes-after-click",
+				required: true,
+			},
+		},
+		reasoning: objective.description,
+		context: { adaptiveReasoning },
 	};
 }
 
@@ -71,6 +115,11 @@ function isStepAlreadySatisfied(step) {
 
 	if (step.action === "select-option") {
 		return state.value === String(expected) || state.selectedLabel === String(expected);
+	}
+
+	if (step.action === "upload-file") {
+		const expectedFileName = String(expected).split(/[\\/]/).pop();
+		return Array.isArray(state.files) && state.files.some((file) => file.name === expectedFileName);
 	}
 
 	if (step.action === "fill-text") {

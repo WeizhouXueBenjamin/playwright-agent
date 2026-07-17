@@ -2,6 +2,7 @@ const { setCheckbox } = require("../actions/checkbox");
 const { clickElement } = require("../actions/click");
 const { fillText } = require("../actions/fill");
 const { selectOption } = require("../actions/select");
+const { uploadFile } = require("../actions/upload");
 const { launchChromium } = require("../browser/browser");
 const { openPage } = require("../browser/page");
 const { waitForInteractionStable, waitForPageStable } = require("../browser/stability");
@@ -80,6 +81,7 @@ async function executeStep(page, step) {
 	if (step.action === "fill-text") return fillText(page, step);
 	if (step.action === "set-checkbox") return setCheckbox(page, step);
 	if (step.action === "select-option") return selectOption(page, step);
+	if (step.action === "upload-file") return uploadFile(page, step);
 	if (step.action === "click") return clickElement(page, step);
 
 	throw new Error(`Unsupported action "${step.action}".`);

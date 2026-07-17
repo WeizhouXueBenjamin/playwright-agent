@@ -1,7 +1,7 @@
 const { listProfileProperties } = require("../profile/profile-properties");
 const { scoreTextMatch } = require("./text-similarity");
 
-const MATCHABLE_KINDS = new Set(["text-input", "checkbox", "radio", "selection", "editable", "interactive"]);
+const MATCHABLE_KINDS = new Set(["text-input", "checkbox", "radio", "selection", "editable", "file-upload", "interactive"]);
 
 function matchFieldsToProfile(semanticPage, profile, options = {}) {
 	const threshold = options.threshold || 45;

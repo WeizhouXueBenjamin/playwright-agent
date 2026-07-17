@@ -20,6 +20,16 @@ async function verifyAction(page, step) {
 		return buildVerificationResult(matched, expected, actual, strategy);
 	}
 
+	if (step.action === "upload-file") {
+		const actual = await locator.evaluate((element) => Array.from(element.files || []).map((file) => ({
+			name: file.name,
+			size: file.size,
+		})));
+		const expected = String(step.actionValue).split(/[\\/]/).pop();
+		const matched = actual.some((file) => file.name === expected);
+		return buildVerificationResult(matched, expected, actual, strategy);
+	}
+
 	const actual = await locator.inputValue();
 	const expected = String(step.actionValue);
 	return buildVerificationResult(actual === expected, expected, actual, strategy);

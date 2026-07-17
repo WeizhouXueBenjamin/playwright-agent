@@ -70,6 +70,8 @@ function isTerminalStatus(status) {
 		"completed",
 		"max-cycles-reached",
 		"needs-review",
+		"needs-user-confirmation",
+		"recovery-failed",
 		"verification-failed",
 	].includes(status);
 }
