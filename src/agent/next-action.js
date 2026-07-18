@@ -1,35 +1,8 @@
 const { buildExecutionPlan } = require("./planner");
+const { buildClickCapabilityStep } = require("../capabilities/capability-registry");
+const { evaluateActionTargetPolicy, evaluateNavigationPolicy } = require("../policy/policy-engine");
 const { matchFieldsToProfile } = require("../reasoning/field-matching");
 const { reasonAboutPage } = require("../reasoning/adaptive-reasoning");
-
-const SAFE_NAVIGATION_PATTERNS = [
-	/\bcontinue\b/i,
-	/\bnext\b/i,
-	/\bsave and continue\b/i,
-	/\bproceed\b/i,
-];
-
-const FINAL_SUBMIT_PATTERNS = [
-	/\bsubmit\b/i,
-	/\bapply\b/i,
-	/\bsend\b/i,
-	/\bfinish\b/i,
-	/\bconfirm\b/i,
-];
-
-const IRREVERSIBLE_ACTION_PATTERNS = [
-	...FINAL_SUBMIT_PATTERNS,
-	/\bcreate account\b/i,
-	/\bsign up\b/i,
-	/\bregister\b/i,
-	/\bpay\b/i,
-	/\bpurchase\b/i,
-	/\bcheckout\b/i,
-	/\bauthori[sz]e\b/i,
-	/\bcontinue with\b/i,
-	/\bsign in with\b/i,
-	/\blog in with\b/i,
-];
 
 function determineNextAction(semanticPage, profile, options = {}) {
 	const adaptiveReasoning = reasonAboutPage(semanticPage, options.runtimeState || {});
@@ -96,44 +69,36 @@ function buildAdaptiveDecision(adaptiveReasoning) {
 	}
 
 	if (objective.type !== "action" || !objective.target) return null;
-	if (isIrreversibleTarget(objective.target)) {
+	const policyEvaluation = evaluateActionTargetPolicy(objective.target);
+	if (!policyEvaluation.allowed) {
 		return {
 			type: "needs-review",
-			reason: "irreversible-action-needs-confirmation",
+			reason: policyEvaluation.reason,
 			details: {
 				pageIntent: adaptiveReasoning.pageIntent,
 				description: objective.description,
 				target: objective.target,
 			},
+			policyEvaluation,
 			context: { adaptiveReasoning },
 		};
 	}
 
-	return {
-		type: "action",
-		step: {
-			id: "adaptive-action",
-			order: 1,
-			action: "click",
-			field: objective.target,
-			profileProperty: null,
-			actionValue: true,
+		return {
+			type: "action",
+			step: buildClickCapabilityStep({
+				id: "adaptive-action",
+				order: 1,
+				field: objective.target,
+				profileProperty: null,
+				actionValue: true,
 			valuePreview: true,
 			confidenceScore: adaptiveReasoning.pageIntent.confidenceScore,
 			reasoning: objective.description,
-			verification: {
-				expectedState: "page-state-changes-after-click",
-				required: true,
-			},
-		},
-		reasoning: objective.description,
-		context: { adaptiveReasoning },
-	};
-}
-
-function isIrreversibleTarget(target) {
-	const label = target.label && target.label.text ? target.label.text : "";
-	return IRREVERSIBLE_ACTION_PATTERNS.some((pattern) => pattern.test(label));
+			}),
+			reasoning: objective.description,
+			context: { adaptiveReasoning },
+		};
 }
 
 function isStepAlreadySatisfied(step) {
@@ -162,18 +127,14 @@ function isStepAlreadySatisfied(step) {
 
 function findSafeNavigationStep(semanticPage) {
 	const button = (semanticPage.interactiveElements || []).find((element) => {
-		if (element.kind !== "button" || element.disabled) return false;
-		const label = element.label && element.label.text ? element.label.text : "";
-		if (IRREVERSIBLE_ACTION_PATTERNS.some((pattern) => pattern.test(label))) return false;
-		return SAFE_NAVIGATION_PATTERNS.some((pattern) => pattern.test(label));
+		return evaluateNavigationPolicy(element).allowed;
 	});
 
 	if (!button) return null;
 
-	return {
+	return buildClickCapabilityStep({
 		id: "cycle-navigation",
 		order: 1,
-		action: "click",
 		field: {
 			id: button.id,
 			kind: button.kind,
@@ -189,11 +150,7 @@ function findSafeNavigationStep(semanticPage) {
 		valuePreview: true,
 		confidenceScore: button.label.confidence,
 		reasoning: `Generic safe navigation control detected: "${button.label.text}".`,
-		verification: {
-			expectedState: "page-state-changes-after-click",
-			required: true,
-		},
-	};
+	});
 }
 
 module.exports = {

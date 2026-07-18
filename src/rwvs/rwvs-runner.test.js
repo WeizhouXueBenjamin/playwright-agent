@@ -28,11 +28,14 @@ async function main() {
 	assert.equal(baseline.report.regression.status, "NO_BASELINE");
 	assert.equal(baseline.report.metrics.stoppedBeforeSubmit, true);
 	assert.equal(baseline.report.metrics.successRate, 1);
+	assert.equal(typeof baseline.report.metrics.healthScore, "number");
+	assert.equal(baseline.report.health.mode, "validation-health-score");
 
 	const reportDir = path.join(baseline.rootDir, "reports");
 	const benchmarkMarkdown = await fs.readFile(path.join(reportDir, "benchmark.md"), "utf8");
 	const backlogMarkdown = await fs.readFile(path.join(reportDir, "backlog.md"), "utf8");
 	assert.equal(benchmarkMarkdown.includes("# Summary"), true);
+	assert.equal(benchmarkMarkdown.includes("Health Score"), true);
 	assert.equal(benchmarkMarkdown.includes("# Historical Comparison"), true);
 	assert.equal(backlogMarkdown.includes("| Priority | Area | Issue | Suggested Fix | Estimated Impact | Status |"), true);
 

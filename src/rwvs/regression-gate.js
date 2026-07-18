@@ -27,6 +27,7 @@ function evaluateRegression(current, previous) {
 	const regressions = [];
 	addRegression(regressions, "Success Rate", current.metrics.successRate, previous.metrics.successRate, "lower");
 	addRegression(regressions, "Coverage", current.metrics.coverage, previous.metrics.coverage, "lower");
+	addRegression(regressions, "Health Score", current.metrics.healthScore, previous.metrics.healthScore, "lower");
 	addRegression(regressions, "Verification Failures", current.metrics.verificationFailures, previous.metrics.verificationFailures, "higher");
 	addRegression(regressions, "Runtime Errors", current.metrics.runtimeErrors, previous.metrics.runtimeErrors, "higher");
 

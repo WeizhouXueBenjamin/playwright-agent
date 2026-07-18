@@ -1,4 +1,5 @@
 const { assertBenchmarkReportContract } = require("../contracts/benchmark-report");
+const { buildBenchmarkHealthScore } = require("../validation/health-score");
 
 function buildBenchmarkReport(input) {
 	const {
@@ -11,6 +12,25 @@ function buildBenchmarkReport(input) {
 	} = input;
 	const durationMs = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
 	const successfulCases = caseResults.filter((result) => result.success);
+	const summary = {
+		totalCases: caseResults.length,
+		successfulCases: successfulCases.length,
+		failedCases: caseResults.length - successfulCases.length,
+		successRate: caseResults.length ? successfulCases.length / caseResults.length : 0,
+		totalExecutionTimeMs: sum(caseResults, (result) => result.executionTimeMs),
+		totalActionCount: sum(caseResults, (result) => result.statistics.actionCount),
+		totalRetries: sum(caseResults, (result) => result.statistics.retries),
+		totalRecoveryCount: sum(caseResults, (result) => result.statistics.recoveryCount),
+		totalValidationErrors: sum(caseResults, (result) => result.statistics.validationErrors),
+		totalUnsupportedComponents: sum(caseResults, (result) => result.statistics.unsupportedComponents),
+		totalVerificationFailures: sum(caseResults, (result) => result.statistics.verificationFailures),
+		averageConfidence: average(caseResults.map((result) => result.statistics.confidence).filter((value) => value !== null)),
+		averageComponentConfidence: average(caseResults.map((result) => result.statistics.componentConfidence).filter((value) => value !== null)),
+		averageActionConfidence: average(caseResults.map((result) => result.statistics.actionConfidence).filter((value) => value !== null)),
+	};
+	const health = buildBenchmarkHealthScore(summary);
+	summary.healthScore = health.score;
+	summary.healthGrade = health.grade;
 
 	const report = {
 		schemaVersion: 1,
@@ -25,21 +45,8 @@ function buildBenchmarkReport(input) {
 		startedAt,
 		finishedAt,
 		durationMs,
-		summary: {
-			totalCases: caseResults.length,
-			successfulCases: successfulCases.length,
-			failedCases: caseResults.length - successfulCases.length,
-			successRate: caseResults.length ? successfulCases.length / caseResults.length : 0,
-			totalExecutionTimeMs: sum(caseResults, (result) => result.executionTimeMs),
-			totalActionCount: sum(caseResults, (result) => result.statistics.actionCount),
-			totalRetries: sum(caseResults, (result) => result.statistics.retries),
-			totalRecoveryCount: sum(caseResults, (result) => result.statistics.recoveryCount),
-			totalValidationErrors: sum(caseResults, (result) => result.statistics.validationErrors),
-			totalUnsupportedComponents: sum(caseResults, (result) => result.statistics.unsupportedComponents),
-			averageConfidence: average(caseResults.map((result) => result.statistics.confidence).filter((value) => value !== null)),
-			averageComponentConfidence: average(caseResults.map((result) => result.statistics.componentConfidence).filter((value) => value !== null)),
-			averageActionConfidence: average(caseResults.map((result) => result.statistics.actionConfidence).filter((value) => value !== null)),
-		},
+		summary,
+		health,
 		caseResults,
 		artifacts,
 	};

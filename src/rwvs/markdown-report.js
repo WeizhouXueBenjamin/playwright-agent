@@ -6,6 +6,7 @@ function buildBenchmarkMarkdown(report) {
 		`- Run ID: ${report.runId}`,
 		`- Date: ${report.finishedAt}`,
 		`- Result: ${report.result}`,
+		`- Health Score: ${report.metrics.healthScore} (${report.metrics.healthGrade})`,
 		`- Success Rate: ${formatPercent(report.metrics.successRate)}`,
 		`- Coverage: ${formatPercent(report.metrics.coverage)}`,
 		`- Execution Time: ${report.metrics.executionTimeMs} ms`,
@@ -79,6 +80,7 @@ function comparisonRows(report) {
 	const rows = [
 		["Success Rate", formatPercent(report.previousMetrics.successRate), formatPercent(report.metrics.successRate), metricStatus(report, "Success Rate")],
 		["Coverage", formatPercent(report.previousMetrics.coverage), formatPercent(report.metrics.coverage), metricStatus(report, "Coverage")],
+		["Health Score", report.previousMetrics.healthScore, report.metrics.healthScore, metricStatus(report, "Health Score")],
 		["Verification Failures", report.previousMetrics.verificationFailures, report.metrics.verificationFailures, metricStatus(report, "Verification Failures")],
 		["Runtime Errors", report.previousMetrics.runtimeErrors, report.metrics.runtimeErrors, metricStatus(report, "Runtime Errors")],
 	];

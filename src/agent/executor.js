@@ -1,11 +1,7 @@
-const { setCheckbox } = require("../actions/checkbox");
-const { clickElement } = require("../actions/click");
-const { fillText } = require("../actions/fill");
-const { selectOption } = require("../actions/select");
-const { uploadFile } = require("../actions/upload");
 const { launchChromium } = require("../browser/browser");
 const { openPage } = require("../browser/page");
 const { waitForInteractionStable, waitForPageStable } = require("../browser/stability");
+const { executeCapability } = require("../capabilities/capability-registry");
 const { buildVerificationFailure } = require("../contracts/verification-result");
 const { verifyAction } = require("./verifier");
 
@@ -76,13 +72,7 @@ async function executePlanOnPage(page, plan, options = {}) {
 }
 
 async function executeStep(page, step) {
-	if (step.action === "fill-text") return fillText(page, step);
-	if (step.action === "set-checkbox") return setCheckbox(page, step);
-	if (step.action === "select-option") return selectOption(page, step);
-	if (step.action === "upload-file") return uploadFile(page, step);
-	if (step.action === "click") return clickElement(page, step);
-
-	throw new Error(`Unsupported action "${step.action}".`);
+	return executeCapability(page, step);
 }
 
 module.exports = {

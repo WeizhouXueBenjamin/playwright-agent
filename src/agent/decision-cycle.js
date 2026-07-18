@@ -22,6 +22,7 @@ function runDecisionCycle(input) {
 		runtimeState,
 		plannerDecision,
 		terminalState,
+		policyEvaluation: plannerDecision.policyEvaluation || terminalState.policyEvaluation,
 	});
 
 	return {

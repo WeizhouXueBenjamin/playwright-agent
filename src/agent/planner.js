@@ -1,3 +1,5 @@
+const { buildCapabilityStep } = require("../capabilities/capability-registry");
+
 const DEFAULT_MIN_CONFIDENCE = 70;
 
 function buildExecutionPlan(matches, options = {}) {
@@ -62,37 +64,16 @@ function getReviewItem(match, minConfidence) {
 }
 
 function createActionStep(match, order) {
-	return {
+	return buildCapabilityStep({
 		id: `step-${order}`,
 		order,
-		action: inferAction(match.field),
 		field: match.field,
 		profileProperty: withoutRawValue(match.matchedProfileProperty),
 		actionValue: match.matchedProfileProperty.value,
 		valuePreview: previewValue(match.matchedProfileProperty.value),
 		confidenceScore: match.confidenceScore,
 		reasoning: match.reasoning,
-		verification: {
-			expectedState: inferExpectedState(match.field),
-			required: true,
-		},
-	};
-}
-
-function inferAction(field) {
-	if (field.kind === "checkbox") return "set-checkbox";
-	if (field.kind === "file-upload") return "upload-file";
-	if (field.kind === "radio") return "select-option";
-	if (field.kind === "selection") return "select-option";
-	if (field.kind === "editable") return "fill-text";
-	return "fill-text";
-}
-
-function inferExpectedState(field) {
-	if (field.kind === "checkbox") return "checked-state-matches-profile-value";
-	if (field.kind === "file-upload") return "uploaded-file-matches-profile-value";
-	if (field.kind === "radio" || field.kind === "selection") return "selected-option-matches-profile-value";
-	return "field-value-matches-profile-value";
+	});
 }
 
 function withoutRawValue(profileProperty) {
