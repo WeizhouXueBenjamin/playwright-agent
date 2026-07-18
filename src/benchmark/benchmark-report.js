@@ -1,3 +1,5 @@
+const { assertBenchmarkReportContract } = require("../contracts/benchmark-report");
+
 function buildBenchmarkReport(input) {
 	const {
 		runId,
@@ -10,7 +12,7 @@ function buildBenchmarkReport(input) {
 	const durationMs = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
 	const successfulCases = caseResults.filter((result) => result.success);
 
-	return {
+	const report = {
 		schemaVersion: 1,
 		mode: "end-to-end-benchmark",
 		runId,
@@ -41,6 +43,8 @@ function buildBenchmarkReport(input) {
 		caseResults,
 		artifacts,
 	};
+	assertBenchmarkReportContract(report);
+	return report;
 }
 
 function buildCaseResult(input) {

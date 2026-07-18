@@ -12,6 +12,8 @@
 		"plan-actions": "node src/cli/plan-actions.js",
 		"rwvs": "node src/cli/run-rwvs.js",
 		"validate-components": "node src/cli/validate-components.js",
+		"test:contracts": "node src/contracts/contracts.test.js",
+		"test:decision-cycle": "node src/agent/decision-cycle.test.js",
 		"test:benchmark": "node src/benchmark/benchmark-runner.test.js",
 		"test:controller": "node src/agent/controller.test.js",
 		"test:components": "node src/validation/component-validator.test.js",

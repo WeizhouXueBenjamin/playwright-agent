@@ -1,4 +1,5 @@
 const { createInitialRuntimeState } = require("./runtime-state");
+const { assertRuntimeStateContract, assertRuntimeStatePatchContract } = require("../contracts/runtime-state");
 const {
 	buildObservationStatePatch,
 	buildSuccessfulActionStatePatch,
@@ -32,11 +33,13 @@ class StateManager {
 	}
 
 	applyPatch(patch) {
+		assertRuntimeStatePatchContract(patch);
 		this.state = {
 			...this.state,
 			...patch,
 			updatedAt: patch.updatedAt || new Date().toISOString(),
 		};
+		assertRuntimeStateContract(this.state);
 	}
 }
 

@@ -6,6 +6,7 @@ const { uploadFile } = require("../actions/upload");
 const { launchChromium } = require("../browser/browser");
 const { openPage } = require("../browser/page");
 const { waitForInteractionStable, waitForPageStable } = require("../browser/stability");
+const { buildVerificationFailure } = require("../contracts/verification-result");
 const { verifyAction } = require("./verifier");
 
 async function executePlan(url, plan, options = {}) {
@@ -45,10 +46,7 @@ async function executePlanOnPage(page, plan, options = {}) {
 			await waitForInteractionStable(page, options.interactionStability);
 			verification = await verifyAction(page, step);
 		} catch (error) {
-			verification = {
-				ok: false,
-				error: error.message,
-			};
+			verification = buildVerificationFailure(error);
 		}
 
 		const result = {

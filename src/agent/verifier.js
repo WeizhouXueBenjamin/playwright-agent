@@ -1,4 +1,5 @@
 const { resolveFieldLocator } = require("../actions/locator");
+const { buildVerificationResultContract } = require("../contracts/verification-result");
 
 async function verifyAction(page, step) {
 	if (step.action === "click") {
@@ -43,12 +44,12 @@ async function selectedOptionTextMatches(locator, expected) {
 }
 
 function buildVerificationResult(ok, expected, actual, locatorStrategy) {
-	return {
+	return buildVerificationResultContract({
 		ok,
 		expected,
 		actual,
 		locatorStrategy,
-	};
+	});
 }
 
 module.exports = {

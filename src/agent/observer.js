@@ -1,4 +1,5 @@
 const { captureInteractiveElements } = require("../parsers/interactive-elements");
+const { buildObservationContract } = require("../contracts/observation");
 const { buildSemanticPage } = require("../reasoning/page-understanding");
 
 async function observePage(page) {
@@ -9,10 +10,11 @@ async function observePage(page) {
 		interactiveElements,
 	});
 
-	return {
+	return buildObservationContract({
 		semanticPage,
 		fingerprint: buildPageFingerprint(semanticPage),
-	};
+		sources: ["dom"],
+	});
 }
 
 function buildPageFingerprint(semanticPage) {

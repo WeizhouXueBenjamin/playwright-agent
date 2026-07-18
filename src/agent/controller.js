@@ -1,11 +1,9 @@
-const { executeStep } = require("./executor");
 const { observePage } = require("./observer");
-const { determineNextAction } = require("./next-action");
-const { detectTerminalState } = require("./terminal-state");
-const { verifyAction } = require("./verifier");
+const { runDecisionCycle } = require("./decision-cycle");
 const { launchChromium } = require("../browser/browser");
 const { openPage } = require("../browser/page");
-const { waitForInteractionStable, waitForPageStable } = require("../browser/stability");
+const { waitForPageStable } = require("../browser/stability");
+const { runVerifiedAction } = require("../execution/verified-action-runner");
 const { RecoveryEngine } = require("../recovery/recovery-engine");
 const { StateManager } = require("../state/state-manager");
 
@@ -43,11 +41,15 @@ class AgentController {
 			const observation = await observePage(page);
 			stateManager.applyObservation(observation);
 			const observedRuntimeState = stateManager.getState();
-			const decision = determineNextAction(observation.semanticPage, profile, {
-				...this.options,
+			const decisionCycle = runDecisionCycle({
+				goal: this.options.goal || "",
+				observation,
+				profile,
 				runtimeState: observedRuntimeState,
+				options: this.options,
 			});
-			const terminalState = detectTerminalState(observation.semanticPage, decision);
+			const plannerDecision = decisionCycle.plannerDecision;
+			const terminalState = decisionCycle.terminalState;
 
 			const lifecycleEntry = {
 				cycle,
@@ -55,7 +57,7 @@ class AgentController {
 				timestamp: new Date().toISOString(),
 				url: observation.semanticPage.url,
 				pageSummary: observation.semanticPage.summary,
-				decision: summarizeDecision(decision),
+				decision: decisionCycle.decision,
 				terminalState,
 				runtimeStateSnapshot: observedRuntimeState,
 			};
@@ -74,9 +76,14 @@ class AgentController {
 				};
 			}
 
-			const actionResult = await this.actAndVerify(page, decision.step, observation);
+			const actionResult = await runVerifiedAction({
+				page,
+				step: plannerDecision.step,
+				beforeObservation: observation,
+				interactionStability: this.options.interactionStability,
+			});
 			if (actionResult.verification.ok) {
-				stateManager.applySuccessfulAction(decision.step, actionResult.verification);
+				stateManager.applySuccessfulAction(plannerDecision.step, actionResult.verification);
 			}
 			lifecycle.push({
 				...lifecycleEntry,
@@ -90,7 +97,7 @@ class AgentController {
 				const recovery = await this.recoveryEngine.recover({
 					page,
 					profile,
-					step: decision.step,
+					step: plannerDecision.step,
 					actionResult,
 					beforeObservation: observation,
 					stateManager,
@@ -128,59 +135,6 @@ class AgentController {
 		};
 	}
 
-	async actAndVerify(page, step, observation) {
-		let action;
-
-		try {
-			action = await executeStep(page, step);
-			await waitForInteractionStable(page, this.options.interactionStability);
-		} catch (error) {
-			return {
-				step,
-				action: action || null,
-				verification: {
-					ok: false,
-					error: error.message,
-				},
-			};
-		}
-
-		if (step.action === "click") {
-			const nextObservation = await observePage(page);
-			return {
-				step,
-				action,
-				verification: {
-					ok: nextObservation.fingerprint !== observation.fingerprint,
-					expected: "page-state-changes-after-click",
-					actual: nextObservation.fingerprint === observation.fingerprint ? "unchanged" : "changed",
-				},
-			};
-		}
-
-		return {
-			step,
-			action,
-			verification: await verifyAction(page, step),
-		};
-	}
-}
-
-function summarizeDecision(decision) {
-	if (decision.type !== "action") {
-		return {
-			type: decision.type,
-			reason: decision.reason,
-		};
-	}
-
-	return {
-		type: decision.type,
-		action: decision.step.action,
-		field: decision.step.field.label,
-		confidenceScore: decision.step.confidenceScore,
-		reasoning: decision.reasoning,
-	};
 }
 
 function summarizeRecovery(recovery) {
