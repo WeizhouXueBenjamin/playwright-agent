@@ -1,403 +1,390 @@
-# Browser AI Agent Benchmark
+# Browser AI Agent Continuous Validation
 
 ## Context
 
-The Browser AI Agent has completed its current implementation phases.
+The Browser AI Agent is validated through benchmark-driven continuous improvement.
 
-The project's immediate priority is no longer architectural refinement.
-
-The primary objective is to validate the agent on real-world ATS platforms and improve it through benchmark-driven iteration.
-
-Follow the current development strategy:
+Use the full Continuous Improvement Loop:
 
 Benchmark
+-> Diagnostics
+-> Capability Analysis
+-> Improvement Proposal
+-> Regression Replay
+-> Capability History
 
-↓
+Benchmark Model V2 is additive. Do not remove, rename, or reinterpret existing V1 fields.
 
-Analyze
+V1 is the compatibility and regression track:
 
-↓
+- summary
+- metrics
+- health
+- caseResults
+- schemaVersion=1 reports
+- legacy component coverage
+- V1 regression gate
 
-Implement the smallest generic improvement
+V2 is the diagnostics and explainability track:
 
-↓
-
-Benchmark Again
-
-↓
-
-Compare
-
-↓
-
-Repeat
-
-Do not perform speculative architectural work.
-
-Do not introduce abstractions unless benchmark evidence demonstrates the need.
-
-Benchmark Model V2 is additive. Preserve existing V1 report fields and V1 regression behavior, and reuse the dual-track V1/V2 output for explanation.
-
-V1 remains the compatibility and regression track.
-
-V2 is the explainability track:
-
-- Observation metrics
-- Decision metrics
-- Page metrics
-- Task metrics
-- Benchmark metrics
-- layered health scores
+- metricsV2
+- healthV2
 - Page Profile
 - Applicable Components
+- Applicable Coverage
+- Decision Metrics
+- Efficiency Metrics
+- Task Outcome
+- layered Observation / Decision / Page / Task / Benchmark diagnosis
+
+Do not use V2 metrics to fail the existing V1 regression gate unless the benchmark tooling explicitly supports that later.
+
+Do not automatically modify source code during validation. Generate advisory improvement proposals only. Any suggested improvement must cite objective artifact evidence.
 
 ---
 
 # Target Website
 
+Default benchmark target:
+
 <https://job-boards.greenhouse.io/released/jobs/7802196003>
+
+When a dataset path is supplied, use that dataset instead of the default target.
 
 ---
 
 # Objective
 
-Evaluate the Browser AI Agent against this real ATS website.
+Evaluate the Browser AI Agent against real ATS benchmark data.
 
-Treat this website as:
+The purpose is not to submit an application.
 
-Benchmark #001
-
-The purpose is **not** to complete an application.
-
-The purpose is to discover weaknesses in the Browser AI Agent.
+The purpose is to discover, explain, and prioritize generic Browser AI Agent capability gaps using objective artifacts.
 
 ---
 
 # Execution Rules
+
 Execution Mode: headed, persistent
 
 Browser: Chromium
 
 Viewport: Desktop
 
-Follow the complete validation pipeline.
+Always stop before irreversible actions.
 
-Observe
+Never:
 
-↓
-
-Reason
-
-↓
-
-Decide
-
-↓
-
-Execute
-
-↓
-
-Verify
-
-↓
-
-Update Runtime State
-
-↓
-
-Benchmark
-
-↓
-
-Analyze
-
-↓
-
-Repeat
-
-Always stop before any irreversible action.
-
-Never submit an application.
-
-Never create an account.
-
-Never perform any action that cannot be safely reversed.
-
----
-
-# Phase 1 — Passive Observation
-
-Without interacting with the page:
-
-Collect:
-
-- DOM snapshot
-- Accessibility Tree
-- Screenshot
-- Browser metadata
-- Console messages
-- Network errors
-- Initial Runtime State
-- Observation artifacts
-
-Determine:
-
-- page type
-- ATS platform
-- application entry point
-- authentication requirements
-- upload requirements
-- required fields
-- obvious blockers
-
-Do not click anything unless required to continue observation.
-
-Generate:
-
-Observation Report
-
----
-
-# Phase 2 — Component Validation
-
-Validate whether the agent correctly detects:
-
-- buttons
-- text inputs
-- dropdowns
-- radio groups
-- checkboxes
-- upload components
-- required indicators
-- validation messages
-- navigation elements
-- application workflow
-
-Measure:
-
-- V1 legacy fixed component coverage
-- V2 applicable component coverage
-- confidence
-- unsupported components
-- ambiguous detections
-
-Validate V2 fields:
-
-- pageProfile.type
-- pageProfile.evidence
-- applicableComponents.required
-- applicableComponents.optional
-- legacyCoverageRatio
-- applicableCoverageRatio
-- missingApplicableComponents
-- non-applicable V1 missing-component noise
-
-Generate:
-
-Component Validation Report
-
----
-
-# Phase 3 — Controlled Execution
-
-Begin interacting with the website.
-
-Allow:
-
-- navigation
-- clicking
-- typing
-- uploads
-- recovery
-
-Do NOT:
-
-- submit the application
+- submit an application
 - confirm final submission
-- create accounts
-- perform irreversible actions
+- create an account
+- perform an action that cannot be safely reversed
 
 Every interaction must follow:
 
 Observe
+-> Decide
+-> Execute
+-> Verify
+-> Update Runtime State
 
-↓
+All metrics and proposals must be derived from artifacts:
 
-Decision
+- observationReport
+- validationReport
+- executionReport
+- executionTimeline
+- runtimeTimeline
+- finalRuntimeState
+- semanticPage
+- policyEvaluation
+- verificationResults
+- failureReport
+- backlog
+- metricsV2
+- healthV2
+- postmortem
+- improvementProposals
+- capability history
 
-↓
+Do not use LLM subjective scoring for metrics, health, proposal ranking, or capability status.
 
-Execute
+---
 
-↓
+# Phase 1 - Benchmark
 
-Verify
+Run the complete RWVS benchmark pipeline for the target dataset or website.
 
-↓
+Generate and preserve all normal RWVS artifacts.
 
-Runtime State Update
+Required outputs:
 
-If verification fails:
+- reports/benchmark-report.json
+- reports/benchmark.md
+- reports/observation-report.json
+- reports/validation-report.json
+- reports/execution-report.json
+- reports/failure-report.json
+- reports/backlog.json
+- reports/improvement-summary.json
 
-Attempt recovery.
+V1 compatibility outputs must remain present and unchanged:
 
-Continue benchmarking whenever safe.
+- summary
+- metrics
+- health
+- caseResults
+- validationReport.componentValidation.coverage.coverageRatio
 
-Decision metrics must be derived from execution artifacts only:
+---
+
+# Phase 2 - Diagnostics
+
+Use Benchmark Model V2 as the diagnostics track.
+
+Required V2 outputs:
+
+- metricsV2
+- healthV2
+- metricsV2.pageProfile
+- metricsV2.applicableComponents
+- metricsV2.coverage.legacyCoverageRatio
+- metricsV2.coverage.applicableCoverageRatio
+- metricsV2.decision
+- metricsV2.task.efficiency
+- metricsV2.task.outcome
+
+Report objective diagnostics for:
+
+- Observation metrics
+- Decision metrics
+- Page metrics
+- Task metrics
+- Benchmark metrics
+- Layered Health
+- Task Outcome
+- Efficiency Metrics
+
+Decision metrics must be derived only from:
 
 - executionTimeline
-- verificationResults
 - policyEvaluation
+- verificationResults
 - runtimeTimeline
 - finalRuntimeState
 
-Do not use LLM subjective scoring for decision correctness.
+Efficiency metrics must be derived only from:
+
+- executedActions
+- executionTimeline
+- runtimeTimeline
+- finalRuntimeState.completedFields
 
 ---
 
-# Phase 4 — Failure Analysis
+# Phase 3 - Capability Analysis
 
-Every failure must be classified.
+Map failures and task outcomes to generic capabilities.
 
-Examples:
+Capability taxonomy:
 
-Observation
+- Policy Navigation
+- Runtime State Planning
+- Field Identification
+- Semantic Matching
+- Verification
+- Recovery
+- Page Profile
+- Applicable Components
+- Safety / Policy
 
-Semantic Matching
+Required capability outputs:
 
-Reasoning
+- capability-evolution-log.md
+- capability-history.json
 
-Decision
+Every capability entry must include objective evidence:
 
-Planning
+- benchmark id
+- platform
+- result
+- pageProfile
+- task outcome
+- capability gap
+- evidence
+- generic improvement
+- status
+- affected layers
 
-Execution
-
-Verification
-
-Recovery
-
-Locator Resolution
-
-Runtime State
-
-Policy
-
-Page Profile
-
-Applicable Components
-
-For every failure include:
-
-- description
-- root cause
-- affected subsystem
-- impact
-- reproducibility
-- recommended generic improvement
-- whether V1 or V2 explains it better
-
-Avoid website-specific fixes.
+Do not create website-specific capability labels or platform-specific fixes.
 
 ---
 
-# Phase 5 — Improvement Planning
+# Phase 4 - Improvement Proposal
 
-Rank improvements by expected impact.
+Generate advisory improvement proposals.
 
-Prefer improvements that increase:
+Required output:
 
-- robustness
-- generalization
-- verification accuracy
-- recovery success
+- reports/improvement-proposals.json
 
-Reject improvements that only solve this website.
+Each proposal must include:
+
+- capability
+- title
+- evidence
+- affectedLayers
+- expectedImpact
+- regressionRisk
+- suggestedScope
+- candidateTests
+- status
+
+Allowed statuses:
+
+- proposed
+- accepted
+- rejected
+- deferred
+
+Proposal generation rules:
+
+- derive from failureReport, metricsV2.task.outcome, metricsV2.decision, metricsV2.task.efficiency, and backlog
+- rank recurring or high-impact capability gaps higher
+- rank policy/safety risks highest
+- do not generate website-specific fixes
+- do not automatically modify source code
+- cite artifact evidence for every recommendation
+
+If repeated verified fields are already fixed, do not create an open Runtime State Planning proposal for that issue. It should appear as validated capability history instead.
 
 ---
 
-# Phase 6 — Benchmark Summary
+# Phase 5 - Regression Replay
 
-Generate:
+Run the V1 regression gate exactly as implemented.
 
-- benchmark.md
-- backlog.md
-- regression.md
-- health.md
+V1 regression behavior is compatibility-critical and must remain unchanged.
 
-Include V1 compatibility metrics:
+Report:
 
-- success rate
-- legacy component coverage
-- execution time
-- recovery count
-- verification failures
-- runtime errors
-- legacy health score
-- V1 regression status
+- regression status
+- previous V1 metrics, if available
+- current V1 metrics
+- regressions detected by the V1 gate
 
-Include V2 explainability output:
+V2 may be shown for diagnostics, but V2 must not fail the existing V1 regression flow.
 
+---
+
+# Phase 6 - Post-mortem
+
+Generate an engineering post-mortem after each RWVS run.
+
+Required output:
+
+- reports/postmortem.md
+
+The post-mortem must include:
+
+- Task Summary
+- V1 Result
+- V2 Layer Diagnosis
 - Page Profile
 - Applicable Coverage
 - Decision Metrics
-- Layered Health
-- V1 vs V2 Explainability
-- Observation / Decision / Page / Task / Benchmark layer diagnosis
+- Efficiency Metrics
+- Task Outcome
+- Blocking Issue
+- Capability Gap
+- Evidence
+- Suggested Generic Improvement
+- Regression Replay Result, if available
 
-Do not treat a V2 score increase as the primary success criterion.
+The post-mortem must be derived from:
 
-The primary V2 success criterion is better explainability from objective report data.
+- metricsV2
+- healthV2
+- failureReport
+- backlog
+- executionReport
+- regression result
 
----
-
-# Deliverables
-
-Produce:
-
-1. Executive Summary
-
-2. Observation Report
-
-3. Component Validation Report
-
-4. Execution Report
-
-5. Failure Analysis
-
-6. Improvement Backlog
-
-7. Benchmark Metrics
-
-8. V2 Layered Metrics
-
-9. Regression Summary
-
-10. Agent Health Score
-
-11. V1 vs V2 Explainability Summary
+The post-mortem does not replace benchmark.md. It is an engineering diagnostic report.
 
 ---
 
-# Development Constraints
+# Phase 7 - Capability History
 
-Use benchmark evidence to guide all conclusions.
+Update cross-run and cross-benchmark capability artifacts.
 
-Do not recommend architectural changes unless they directly address observed benchmark failures.
+Required outputs:
 
-Implement only the highest-priority generic improvement after the benchmark.
+- capability-evolution-log.md
+- capability-history.json
+- recurring-issues.md, if available
+- recurring-issues.json, if available
 
-Do not solve multiple unrelated issues in one iteration.
+Recurring issue fields:
 
-If a change cannot be justified by benchmark evidence, defer it.
+- capability
+- occurrences
+- platforms
+- benchmarks
+- firstSeen
+- lastSeen
+- priority
+- status
+- relatedImprovements
 
-The success criterion is not "cleaner architecture."
+Priority rules:
 
-The success criterion is:
+- policy and safety issues are highest priority
+- verification regressions are high priority
+- multi-platform recurring capability gaps are promoted
+- single-platform low-impact issues remain low priority
 
-- higher benchmark success rate
-- better verification accuracy
-- improved recovery
-- fewer regressions
-- more reliable execution on real ATS platforms.
+Recurring Issues should guide the next developer-approved generic fix. They must not change the current RWVS result.
+
+---
+
+# Required Final Output
+
+Summarize the run using these sections:
+
+1. V1 Metrics
+2. V2 Metrics
+3. Task Outcome
+4. Efficiency Metrics
+5. Post-mortem
+6. Improvement Proposals
+7. Capability Evolution Log
+8. Recurring Issues, if available
+9. Regression Replay Result
+10. Artifact Evidence
+
+Every conclusion or suggested improvement must reference the artifact that supports it.
+
+The final summary must clearly state:
+
+- V1 is the compatibility/regression track
+- V2 is the diagnostics/explainability track
+- no source code was automatically changed by validation
+- any future code change requires developer approval and should be generic
+
+---
+
+# Success Criteria
+
+Validation succeeds when:
+
+- all required artifacts are generated
+- V1 metrics and V1 regression gate remain intact
+- V2 diagnostics explain the observed behavior using objective data
+- postmortem.md provides an engineering diagnosis
+- improvementProposals are advisory and evidence-backed
+- capability history is updated
+- recurring issues are refreshed when prior benchmark artifacts are available
+- no application is submitted
+- no account is created
+- no website-specific code change is proposed as the default path

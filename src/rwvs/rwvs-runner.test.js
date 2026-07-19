@@ -35,8 +35,11 @@ async function main() {
 	const benchmarkMarkdown = await fs.readFile(path.join(reportDir, "benchmark.md"), "utf8");
 	const backlogMarkdown = await fs.readFile(path.join(reportDir, "backlog.md"), "utf8");
 	const postmortemMarkdown = await fs.readFile(path.join(reportDir, "postmortem.md"), "utf8");
+	const improvementProposals = JSON.parse(await fs.readFile(path.join(reportDir, "improvement-proposals.json"), "utf8"));
 	const capabilityHistory = await fs.readFile(path.join(rootDir, "capability-history.json"), "utf8");
 	const capabilityMarkdown = await fs.readFile(path.join(rootDir, "capability-evolution-log.md"), "utf8");
+	const recurringIssues = await fs.readFile(path.join(rootDir, "recurring-issues.json"), "utf8");
+	const recurringMarkdown = await fs.readFile(path.join(rootDir, "recurring-issues.md"), "utf8");
 	assert.equal(benchmarkMarkdown.includes("# Summary"), true);
 	assert.equal(benchmarkMarkdown.includes("Health Score"), true);
 	assert.equal(benchmarkMarkdown.includes("# Efficiency Metrics"), true);
@@ -49,8 +52,12 @@ async function main() {
 	assert.equal(postmortemMarkdown.includes("## V2 Layer Diagnosis"), true);
 	assert.equal(postmortemMarkdown.includes("## Capability Gap"), true);
 	assert.equal(postmortemMarkdown.includes("## Regression Replay Result"), true);
+	assert.equal(baseline.report.improvementProposals.mode, "rwvs-improvement-proposals");
+	assert.equal(improvementProposals.mode, "rwvs-improvement-proposals");
 	assert.equal(capabilityHistory.includes("capability-evolution-history"), true);
 	assert.equal(capabilityMarkdown.includes("# Capability Evolution Log"), true);
+	assert.equal(recurringIssues.includes("rwvs-recurring-issues"), true);
+	assert.equal(recurringMarkdown.includes("# Recurring Issues"), true);
 	assert.equal(Object.prototype.hasOwnProperty.call(baseline.report, "capabilityHistory"), false);
 
 	const regression = await runRealWebsiteValidation({

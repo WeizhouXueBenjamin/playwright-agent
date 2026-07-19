@@ -10,8 +10,10 @@ const { buildMetricsV2 } = require("../validation/metrics-v2");
 const { validateApplicationComponents } = require("../validation/component-validation-runner");
 const { buildImprovementBacklog, buildImprovementSummary } = require("./backlog");
 const { buildFailureReport } = require("./failure-analysis");
+const { buildImprovementProposals } = require("./improvement-proposals");
 const { buildBacklogMarkdown, buildBenchmarkMarkdown, buildPostmortemMarkdown } = require("./markdown-report");
 const { updateCapabilityEvolutionArtifacts } = require("./capability-evolution");
+const { updateRecurringIssueArtifacts } = require("./recurring-issues");
 const { evaluateRegression, loadPreviousRwvsReport } = require("./regression-gate");
 const { createWebsiteId } = require("./site-id");
 
@@ -54,6 +56,9 @@ async function runRealWebsiteValidation(input, options = {}) {
 		: benchmarkReport.regression.status === "REGRESSION"
 			? "REGRESSION"
 			: "PASS";
+	benchmarkReport.improvementProposals = buildImprovementProposals(benchmarkReport, {
+		capabilityHistory: await loadCapabilityHistoryForProposals(context),
+	});
 
 	await writeRwvsArtifacts(context, {
 		failureReport,
@@ -62,6 +67,7 @@ async function runRealWebsiteValidation(input, options = {}) {
 		benchmarkReport,
 	});
 	await writeCapabilityEvolutionArtifacts(context, benchmarkReport);
+	await writeRecurringIssueArtifacts(context);
 
 	return {
 		runId,
@@ -222,6 +228,7 @@ function calculateExecutionTime(timeline) {
 async function writeRwvsArtifacts(context, artifacts) {
 	await writeJsonArtifact(context.dirs.reports, "failure-report.json", artifacts.failureReport);
 	await writeJsonArtifact(context.dirs.reports, "improvement-summary.json", artifacts.improvementSummary);
+	await writeJsonArtifact(context.dirs.reports, "improvement-proposals.json", artifacts.benchmarkReport.improvementProposals);
 	await writeJsonArtifact(context.dirs.reports, "benchmark-report.json", artifacts.benchmarkReport);
 	await writeJsonArtifact(context.dirs.reports, "backlog.json", artifacts.backlog);
 	await writeTextArtifact(context.dirs.reports, "benchmark.md", buildBenchmarkMarkdown(artifacts.benchmarkReport));
@@ -239,6 +246,25 @@ async function writeCapabilityEvolutionArtifacts(context, benchmarkReport) {
 	await updateCapabilityEvolutionArtifacts(capabilityDir, benchmarkReport, {
 		executionReport: context.executionReport,
 	});
+}
+
+async function writeRecurringIssueArtifacts(context) {
+	const capabilityDir = context.options.capabilityHistoryDir
+		? path.resolve(context.options.capabilityHistoryDir)
+		: path.dirname(context.rootDir);
+	await updateRecurringIssueArtifacts(capabilityDir);
+}
+
+async function loadCapabilityHistoryForProposals(context) {
+	const capabilityDir = context.options.capabilityHistoryDir
+		? path.resolve(context.options.capabilityHistoryDir)
+		: path.dirname(context.rootDir);
+	try {
+		const content = await fs.readFile(path.join(capabilityDir, "capability-history.json"), "utf8");
+		return JSON.parse(content);
+	} catch {
+		return null;
+	}
 }
 
 function buildDirs(rootDir) {
