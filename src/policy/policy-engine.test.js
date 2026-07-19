@@ -13,6 +13,20 @@ const continueButton = {
 	label: { text: "Continue", source: "text", confidence: 1 },
 	disabled: false,
 };
+const applyNowLink = {
+	id: "apply-now",
+	kind: "link",
+	role: "link",
+	label: { text: "APPLY NOW", source: "text", confidence: 1 },
+	disabled: false,
+};
+const unrelatedApplyNowLink = {
+	id: "apply-now-korean",
+	kind: "link",
+	role: "link",
+	label: { text: "Apply Now - Korean", source: "text", confidence: 1 },
+	disabled: false,
+};
 const submitButton = {
 	id: "submit",
 	kind: "button",
@@ -36,6 +50,31 @@ assert.deepEqual(
 		risk: "low",
 	},
 );
+
+assert.deepEqual(
+	pickPolicyFields(evaluateNavigationPolicy(applyNowLink)),
+	{
+		status: "allowed",
+		allowed: true,
+		policy: "safe-application-entry",
+		reason: "application-entry-link",
+		risk: "low",
+	},
+);
+
+assert.deepEqual(
+	pickPolicyFields(evaluateActionTargetPolicy(applyNowLink)),
+	{
+		status: "allowed",
+		allowed: true,
+		policy: "safe-application-entry",
+		reason: "application-entry-link",
+		risk: "low",
+	},
+);
+
+assert.equal(evaluateNavigationPolicy(unrelatedApplyNowLink).allowed, false);
+assert.equal(evaluateNavigationPolicy(unrelatedApplyNowLink).reason, "irreversible-action-needs-confirmation");
 
 assert.deepEqual(
 	pickPolicyFields(evaluateActionTargetPolicy(submitButton)),

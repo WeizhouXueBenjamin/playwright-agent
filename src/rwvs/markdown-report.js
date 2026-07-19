@@ -19,6 +19,26 @@ function buildBenchmarkMarkdown(report) {
 		"",
 		table(["Component", "Count"], componentCoverageRows(report)),
 		"",
+		"# Page Profile",
+		"",
+		table(["Field", "Value"], pageProfileRows(report)),
+		"",
+		"# Applicable Coverage",
+		"",
+		table(["Metric", "Value"], applicableCoverageRows(report)),
+		"",
+		"# Decision Metrics",
+		"",
+		table(["Metric", "Value"], decisionMetricRows(report)),
+		"",
+		"# Layered Health",
+		"",
+		table(["Layer", "Score", "Grade", "Inputs", "Weights"], layeredHealthRows(report)),
+		"",
+		"# V1 vs V2 Explainability",
+		"",
+		...explainabilityLines(report),
+		"",
 		"# Failure Summary",
 		"",
 		table(["Area", "Root Cause", "Impact"], failureRows(report)),
@@ -53,6 +73,105 @@ function buildBacklogMarkdown(backlog) {
 function componentCoverageRows(report) {
 	const counts = report.validationReport && report.validationReport.componentValidation.coverage.counts || {};
 	return Object.entries(counts).map(([component, count]) => [component, String(count)]);
+}
+
+function pageProfileRows(report) {
+	const profile = report.metricsV2 && report.metricsV2.pageProfile || report.validationReport && report.validationReport.componentValidation.pageProfile || {};
+	const signals = profile.signals || {};
+
+	return [
+		["Type", profile.type || "unknown"],
+		["Confidence", formatPercent(profile.confidence || 0)],
+		["Interactive Elements", signals.interactiveElementCount || 0],
+		["Form Controls", signals.formControlCount || 0],
+		["Application Entry Controls", signals.applicationEntryCount || 0],
+		["Evidence", (profile.evidence || []).join("; ")],
+	];
+}
+
+function applicableCoverageRows(report) {
+	const coverage = report.validationReport && report.validationReport.componentValidation.coverage || {};
+	const v2Coverage = report.metricsV2 && report.metricsV2.coverage || {};
+	const applicable = report.validationReport && report.validationReport.componentValidation.applicableComponents
+		|| report.metricsV2 && report.metricsV2.applicableComponents
+		|| {};
+
+	return [
+		["Legacy Coverage Ratio", formatPercent(coverage.legacyCoverageRatio !== undefined ? coverage.legacyCoverageRatio : v2Coverage.legacyCoverageRatio)],
+		["Applicable Coverage Ratio", formatPercent(coverage.applicableCoverageRatio !== undefined ? coverage.applicableCoverageRatio : v2Coverage.applicableCoverageRatio)],
+		["Required Applicable", (applicable.required || []).join(", ")],
+		["Optional Applicable", (applicable.optional || []).join(", ")],
+		["Missing Required Applicable", (coverage.missingRequiredApplicableComponents || []).map((item) => item.type).join(", ") || "none"],
+	];
+}
+
+function decisionMetricRows(report) {
+	const decision = report.metricsV2 && report.metricsV2.decision || {};
+	return [
+		["Decision Count", decision.decisionCount || 0],
+		["Action Decision Count", decision.actionDecisionCount || 0],
+		["Needs-review Count", decision.needsReviewCount || 0],
+		["Policy Compliant Count", decision.policyCompliantCount || 0],
+		["Policy Violation Count", decision.policyViolationCount || 0],
+		["Verification Consistent Count", decision.verificationConsistentCount || 0],
+		["Verification Inconsistent Count", decision.verificationInconsistentCount || 0],
+		["Required Field Progression Score", formatPercent(decision.requiredFieldProgressionScore)],
+		["Strategy Consistency Score", formatPercent(decision.strategyConsistencyScore)],
+	];
+}
+
+function layeredHealthRows(report) {
+	const health = report.healthV2 || {};
+	return [
+		["Observation", health.observationHealth],
+		["Decision", health.decisionHealth],
+		["Page", health.pageHealth],
+		["Task", health.taskHealth],
+		["Benchmark", health.benchmarkHealth],
+	].map(([layer, value]) => [
+		layer,
+		value ? value.score : "n/a",
+		value ? value.grade : "n/a",
+		value ? compactJson(value.inputs) : "",
+		value ? compactJson(value.weights) : "",
+	]);
+}
+
+function explainabilityLines(report) {
+	const coverage = report.validationReport && report.validationReport.componentValidation.coverage || {};
+	const v2Coverage = report.metricsV2 && report.metricsV2.coverage || {};
+	const profile = report.metricsV2 && report.metricsV2.pageProfile || {};
+	const missing = report.validationReport && report.validationReport.componentValidation.missingComponents || [];
+	const applicableMissing = coverage.missingRequiredApplicableComponents || [];
+	const nonApplicableNoise = missing.length
+		? missing
+			.map((item) => item.type)
+			.filter((type) => !applicableMissing.some((item) => item.type === type))
+		: inferNonApplicableNoise(report);
+
+	return [
+		`- V1 legacy coverage uses the fixed EXPECTED_COMPONENTS set and reported ${formatPercent(coverage.legacyCoverageRatio !== undefined ? coverage.legacyCoverageRatio : v2Coverage.legacyCoverageRatio)}.`,
+		`- V2 classified the page as ${profile.type || "unknown"} and reported applicable coverage ${formatPercent(coverage.applicableCoverageRatio !== undefined ? coverage.applicableCoverageRatio : v2Coverage.applicableCoverageRatio)}.`,
+		`- Non-applicable V1 missing component noise: ${nonApplicableNoise.join(", ") || "none"}.`,
+		`- V2 localizes remaining evidence into Observation, Decision, Page, Task, and Benchmark layers without LLM scoring.`,
+	];
+}
+
+function inferNonApplicableNoise(report) {
+	const expectedComponents = [
+		"text-input",
+		"required-field",
+		"label-association",
+		"dropdown",
+		"checkbox",
+		"radio",
+		"upload",
+		"navigation-button",
+		"validation-message",
+	];
+	const applicable = report.metricsV2 && report.metricsV2.applicableComponents || {};
+	const applicableTypes = new Set([...(applicable.required || []), ...(applicable.optional || [])]);
+	return expectedComponents.filter((type) => !applicableTypes.has(type));
 }
 
 function failureRows(report) {
@@ -102,6 +221,10 @@ function table(headers, rows) {
 
 function escapeCell(value) {
 	return String(value === undefined || value === null ? "" : value).replace(/\|/g, "\\|").replace(/\n/g, " ");
+}
+
+function compactJson(value) {
+	return JSON.stringify(value);
 }
 
 function formatPercent(value) {

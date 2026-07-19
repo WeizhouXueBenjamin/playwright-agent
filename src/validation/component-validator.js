@@ -10,6 +10,9 @@ const EXPECTED_COMPONENTS = [
 	"validation-message",
 ];
 
+const { buildApplicableComponents, buildApplicableCoverage } = require("./applicable-components");
+const { buildPageProfile } = require("./page-profile");
+
 const SUPPORTED_KINDS = new Set([
 	"button",
 	"checkbox",
@@ -25,6 +28,9 @@ const SUPPORTED_KINDS = new Set([
 function validateComponents(semanticPage) {
 	const detectedComponents = buildDetectedComponents(semanticPage);
 	const coverage = buildCoverageMetrics(detectedComponents);
+	const pageProfile = buildPageProfile(semanticPage);
+	const applicableComponents = buildApplicableComponents(pageProfile);
+	const applicableCoverage = buildApplicableCoverage(detectedComponents, applicableComponents, coverage.coverageRatio);
 	const missingComponents = buildMissingComponents(coverage);
 	const unsupportedComponents = buildUnsupportedComponents(semanticPage);
 	const potentialRisks = buildPotentialRisks(detectedComponents, missingComponents, unsupportedComponents);
@@ -36,7 +42,12 @@ function validateComponents(semanticPage) {
 		detectedComponents,
 		missingComponents,
 		unsupportedComponents,
-		coverage,
+		coverage: {
+			...coverage,
+			...applicableCoverage,
+		},
+		pageProfile,
+		applicableComponents,
 		confidence: calculateOverallConfidence(detectedComponents, unsupportedComponents, potentialRisks),
 		potentialRisks,
 	};
@@ -75,6 +86,7 @@ function classifyComponentTypes(element) {
 	if (element.kind === "checkbox") types.push("checkbox");
 	if (element.kind === "radio") types.push("radio");
 	if (element.kind === "file-upload") types.push("upload");
+	if (isApplicationEntryLink(element)) types.push("application-entry-link");
 	if (isNavigationButton(element)) types.push("navigation-button");
 	if (element.validation && element.validation.valid === false && element.validation.message) types.push("validation-message");
 
@@ -82,9 +94,15 @@ function classifyComponentTypes(element) {
 }
 
 function isNavigationButton(element) {
-	if (element.kind !== "button") return false;
+	if (!["button", "link"].includes(element.kind)) return false;
 	const label = element.label && element.label.text || "";
 	return /\b(next|continue|proceed|save and continue|back|previous)\b/i.test(label);
+}
+
+function isApplicationEntryLink(element) {
+	if (!["button", "link"].includes(element.kind)) return false;
+	const label = element.label && element.label.text || "";
+	return /^\s*(apply now|start application|begin application)\s*$/i.test(label);
 }
 
 function calculateComponentConfidence(element) {
@@ -142,21 +160,25 @@ function buildCoverageMetrics(detectedComponents) {
 
 	for (const component of detectedComponents) {
 		for (const type of component.componentTypes) {
-			counts[type] = (counts[type] || 0) + 1;
+			if (Object.prototype.hasOwnProperty.call(counts, type)) {
+				counts[type] += 1;
+			}
 		}
 	}
 
 	const presentComponentTypes = Object.entries(counts)
 		.filter(([, count]) => count > 0)
 		.map(([type]) => type);
+	const legacyCoverageRatio = EXPECTED_COMPONENTS.length
+		? round(presentComponentTypes.length / EXPECTED_COMPONENTS.length)
+		: 0;
 
 	return {
 		totalDetectedComponents: detectedComponents.length,
 		counts,
 		presentComponentTypes,
-		coverageRatio: EXPECTED_COMPONENTS.length
-			? round(presentComponentTypes.length / EXPECTED_COMPONENTS.length)
-			: 0,
+		legacyCoverageRatio: legacyCoverageRatio,
+		coverageRatio: legacyCoverageRatio,
 	};
 }
 

@@ -5,7 +5,8 @@ const { collectObservationBenchmark } = require("../benchmark/benchmark-collecto
 const { buildBenchmarkReport, buildCaseResult } = require("../benchmark/benchmark-report");
 const { writeJsonArtifact, writeTextArtifact } = require("../logging/artifact-store");
 const { runPartialExecution } = require("../execution/partial-execution-runner");
-const { buildHealthScore } = require("../validation/health-score");
+const { buildHealthScore, buildLayeredHealthV2 } = require("../validation/health-score");
+const { buildMetricsV2 } = require("../validation/metrics-v2");
 const { validateApplicationComponents } = require("../validation/component-validation-runner");
 const { buildImprovementBacklog, buildImprovementSummary } = require("./backlog");
 const { buildFailureReport } = require("./failure-analysis");
@@ -123,6 +124,8 @@ async function runExecutionPhase(context) {
 function buildRwvsBenchmarkReport(context, failureReport, backlog, improvementSummary, finishedAt) {
 	const metrics = buildMetrics(context);
 	const health = buildHealthScore(metrics);
+	const metricsV2 = buildMetricsV2(context);
+	const healthV2 = buildLayeredHealthV2(metricsV2);
 	metrics.healthScore = health.score;
 	metrics.healthGrade = health.grade;
 	const dataset = {
@@ -171,6 +174,8 @@ function buildRwvsBenchmarkReport(context, failureReport, backlog, improvementSu
 		result: "PENDING",
 		metrics,
 		health,
+		metricsV2,
+		healthV2,
 		failureReport,
 		backlog,
 		improvementSummary,

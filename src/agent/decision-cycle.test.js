@@ -86,3 +86,35 @@ const submitOnlyCycle = runDecisionCycle({
 assert.equal(submitOnlyCycle.plannerDecision.type, "none");
 assert.equal(submitOnlyCycle.terminalState.status, "awaiting-human-confirmation");
 assert.equal(submitOnlyCycle.decision.riskAssessment.level, "high");
+
+const applicationEntryCycle = runDecisionCycle({
+	goal: "Apply to role",
+	observation: {
+		...observation,
+		semanticPage: {
+			...observation.semanticPage,
+			interactiveElements: [
+				{
+					id: "apply-now",
+					kind: "link",
+					role: "link",
+					label: { text: "APPLY NOW", source: "text", confidence: 1 },
+					labelCandidates: [{ text: "APPLY NOW", source: "text", confidence: 1 }],
+					disabled: false,
+				},
+			],
+		},
+	},
+	profile: {},
+	runtimeState: {
+		...runtimeState,
+		remainingRequiredFields: [],
+	},
+	options: {},
+});
+
+assert.equal(applicationEntryCycle.plannerDecision.type, "action");
+assert.equal(applicationEntryCycle.plannerDecision.step.action, "click");
+assert.equal(applicationEntryCycle.plannerDecision.step.field.kind, "link");
+assert.equal(applicationEntryCycle.terminalState.reached, false);
+assert.equal(applicationEntryCycle.decision.riskAssessment.level, "low");

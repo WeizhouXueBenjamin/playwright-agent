@@ -19,6 +19,8 @@
 		"test:controller": "node src/agent/controller.test.js",
 		"test:components": "node src/validation/component-validator.test.js",
 		"test:health-score": "node src/validation/health-score.test.js",
+		"test:page-profile": "node src/validation/page-profile.test.js",
+		"test:metrics-v2": "node src/validation/metrics-v2.test.js",
 		"test:goal-agent": "node src/agent/browser-ai-agent.test.js",
 		"test:observation": "node src/benchmark/benchmark-collector.test.js",
 		"test:partial-execution": "node src/execution/partial-execution-runner.test.js",

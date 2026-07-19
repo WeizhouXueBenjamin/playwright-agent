@@ -3,3 +3,5 @@ logs/
 .playwright/
 .pnpm-store/
 data/
+benchmark/
+benchmarks/

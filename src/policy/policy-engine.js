@@ -5,6 +5,12 @@ const SAFE_NAVIGATION_PATTERNS = [
 	/\bproceed\b/i,
 ];
 
+const APPLICATION_ENTRY_LINK_PATTERNS = [
+	/^\s*apply now\s*$/i,
+	/^\s*start application\s*$/i,
+	/^\s*begin application\s*$/i,
+];
+
 const FINAL_SUBMIT_PATTERNS = [
 	/\bsubmit\b/i,
 	/\bapply\b/i,
@@ -29,8 +35,21 @@ const IRREVERSIBLE_ACTION_PATTERNS = [
 
 function evaluateActionTargetPolicy(target) {
 	const label = getControlLabel(target);
+	const isApplicationEntryLink = target && target.kind === "link" && matchesAny(label, APPLICATION_ENTRY_LINK_PATTERNS);
 	const isFinalSubmit = matchesAny(label, FINAL_SUBMIT_PATTERNS);
 	const isIrreversible = matchesAny(label, IRREVERSIBLE_ACTION_PATTERNS);
+
+	if (isApplicationEntryLink) {
+		return {
+			status: "allowed",
+			allowed: true,
+			policy: "safe-application-entry",
+			reason: "application-entry-link",
+			risk: "low",
+			target,
+			isFinalSubmit: false,
+		};
+	}
 
 	if (isIrreversible) {
 		return {
@@ -56,7 +75,7 @@ function evaluateActionTargetPolicy(target) {
 }
 
 function evaluateNavigationPolicy(control) {
-	if (!control || control.kind !== "button" || control.disabled) {
+	if (!control || !["button", "link"].includes(control.kind) || control.disabled) {
 		return {
 			status: "not-applicable",
 			allowed: false,
@@ -71,12 +90,13 @@ function evaluateNavigationPolicy(control) {
 	if (!actionPolicy.allowed) return { ...actionPolicy, control };
 
 	const label = getControlLabel(control);
-	const isSafeNavigation = matchesAny(label, SAFE_NAVIGATION_PATTERNS);
+	const isApplicationEntryLink = control.kind === "link" && matchesAny(label, APPLICATION_ENTRY_LINK_PATTERNS);
+	const isSafeNavigation = matchesAny(label, SAFE_NAVIGATION_PATTERNS) || isApplicationEntryLink;
 	return {
 		status: isSafeNavigation ? "allowed" : "not-applicable",
 		allowed: isSafeNavigation,
-		policy: "safe-navigation",
-		reason: isSafeNavigation ? "safe-navigation-control" : "not-navigation-control",
+		policy: isApplicationEntryLink ? "safe-application-entry" : "safe-navigation",
+		reason: isApplicationEntryLink ? "application-entry-link" : isSafeNavigation ? "safe-navigation-control" : "not-navigation-control",
 		risk: "low",
 		control,
 	};
