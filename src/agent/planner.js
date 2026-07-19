@@ -31,12 +31,24 @@ function buildExecutionPlan(matches, options = {}) {
 }
 
 function getReviewItem(match, minConfidence) {
+	if (match.safetyDecision && !match.safetyDecision.allowed) {
+		return {
+			field: match.field,
+			matchedProfileProperty: match.matchedProfileProperty ? withoutRawValue(match.matchedProfileProperty) : null,
+			reason: match.safetyDecision.reason,
+			message: "Sensitive field requires user review before the agent can answer it.",
+			confidenceScore: match.confidenceScore,
+			safetyDecision: match.safetyDecision,
+		};
+	}
+
 	if (!match.matchedProfileProperty) {
 		return {
 			field: match.field,
 			reason: "unmatched-field",
 			message: "No profile property was confidently matched to this field.",
 			confidenceScore: match.confidenceScore,
+			safetyDecision: match.safetyDecision,
 		};
 	}
 
@@ -47,6 +59,7 @@ function getReviewItem(match, minConfidence) {
 			reason: "low-confidence",
 			message: `Match confidence ${match.confidenceScore} is below the required ${minConfidence}.`,
 			confidenceScore: match.confidenceScore,
+			safetyDecision: match.safetyDecision,
 		};
 	}
 
@@ -57,6 +70,7 @@ function getReviewItem(match, minConfidence) {
 			reason: "missing-profile-value",
 			message: "The matched profile property has no usable value.",
 			confidenceScore: match.confidenceScore,
+			safetyDecision: match.safetyDecision,
 		};
 	}
 
@@ -64,7 +78,7 @@ function getReviewItem(match, minConfidence) {
 }
 
 function createActionStep(match, order) {
-	return buildCapabilityStep({
+	const step = buildCapabilityStep({
 		id: `step-${order}`,
 		order,
 		field: match.field,
@@ -74,6 +88,8 @@ function createActionStep(match, order) {
 		confidenceScore: match.confidenceScore,
 		reasoning: match.reasoning,
 	});
+	if (match.safetyDecision) step.safetyDecision = match.safetyDecision;
+	return step;
 }
 
 function withoutRawValue(profileProperty) {

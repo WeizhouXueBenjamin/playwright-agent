@@ -27,6 +27,45 @@ assert.deepEqual(
 );
 assert.deepEqual(plan.reviewItems.map((item) => item.reason), ["unmatched-field"]);
 
+const sensitivePlan = buildExecutionPlan([
+	{
+		...createMatch("salary", "text-input", "Salary expectations", "targetRole", "Full-Stack Engineer", 98),
+		safetyDecision: {
+			allowed: false,
+			fieldIntent: "salary-expectation",
+			riskLevel: "high",
+			matchedProperty: "targetRole",
+			reason: "sensitive-field-unsafe-profile-match",
+			requiresReview: true,
+			evidence: [{ source: "label", value: "Salary expectations" }],
+		},
+	},
+]);
+assert.equal(sensitivePlan.status, "needs-review");
+assert.equal(sensitivePlan.steps.length, 0);
+assert.equal(sensitivePlan.reviewItems.length, 1);
+assert.equal(sensitivePlan.reviewItems[0].reason, "sensitive-field-unsafe-profile-match");
+assert.equal(sensitivePlan.reviewItems[0].safetyDecision.fieldIntent, "salary-expectation");
+
+const explicitSensitivePlan = buildExecutionPlan([
+	{
+		...createMatch("salary", "text-input", "Salary expectations", "salaryExpectation", "NZD 150,000", 98),
+		safetyDecision: {
+			allowed: true,
+			fieldIntent: "salary-expectation",
+			riskLevel: "high",
+			matchedProperty: "salaryExpectation",
+			reason: "explicit-profile-value-approved",
+			requiresReview: false,
+			evidence: [{ source: "label", value: "Salary expectations" }],
+		},
+	},
+]);
+assert.equal(explicitSensitivePlan.status, "ready");
+assert.equal(explicitSensitivePlan.steps.length, 1);
+assert.equal(explicitSensitivePlan.steps[0].profileProperty.path, "salaryExpectation");
+assert.equal(explicitSensitivePlan.steps[0].safetyDecision.allowed, true);
+
 function createMatch(fieldId, kind, label, propertyPath, value, confidenceScore) {
 	return {
 		field: {

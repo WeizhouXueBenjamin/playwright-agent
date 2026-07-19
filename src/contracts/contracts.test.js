@@ -53,6 +53,30 @@ assert.equal(decision.reasoning, "Fill matched profile field.");
 assert.equal(decision.chosenAction.type, "fill-text");
 assert.equal(decision.verificationStrategy.type, "verify-action-result");
 
+const reviewDecision = buildDecisionContract({
+	observation,
+	runtimeState,
+	plannerDecision: {
+		type: "needs-review",
+		reason: "required-field-needs-review",
+		details: {
+			field: { label: { text: "Salary expectations", source: "label" } },
+			safetyDecision: {
+				allowed: false,
+				fieldIntent: "salary-expectation",
+				riskLevel: "high",
+				matchedProperty: "targetRole",
+				reason: "sensitive-field-unsafe-profile-match",
+				requiresReview: true,
+				evidence: [{ source: "label", value: "Salary expectations" }],
+			},
+		},
+	},
+	terminalState: { reached: false, status: "running", reason: "required-field-needs-review" },
+});
+assert.equal(reviewDecision.safetyDecision.fieldIntent, "salary-expectation");
+assert.equal(reviewDecision.safetyDecision.reason, "sensitive-field-unsafe-profile-match");
+
 const verification = buildVerificationResultContract({
 	ok: true,
 	expected: "Aroha",

@@ -74,6 +74,7 @@ function buildExecutedAction(entry) {
 		field: step.field && step.field.label,
 		profileProperty: step.profileProperty,
 		confidenceScore: step.confidenceScore,
+		safetyDecision: step.safetyDecision,
 		verification: entry.actionResult.verification,
 	};
 }
@@ -87,12 +88,15 @@ function buildTimelineEntry(entry) {
 		decision: entry.decision,
 		terminalState: entry.terminalState,
 	};
+	const safetyDecision = extractTimelineSafetyDecision(entry);
+	if (safetyDecision) timelineEntry.safetyDecision = safetyDecision;
 
 	if (entry.actionResult) {
 		timelineEntry.action = {
 			type: entry.actionResult.step.action,
 			field: entry.actionResult.step.field && entry.actionResult.step.field.label,
 			verificationOk: entry.actionResult.verification.ok === true,
+			safetyDecision: entry.actionResult.step.safetyDecision,
 		};
 	}
 
@@ -101,6 +105,13 @@ function buildTimelineEntry(entry) {
 	}
 
 	return timelineEntry;
+}
+
+function extractTimelineSafetyDecision(entry) {
+	if (entry.decision && entry.decision.safetyDecision) return entry.decision.safetyDecision;
+	if (entry.decision && entry.decision.details && entry.decision.details.safetyDecision) return entry.decision.details.safetyDecision;
+	if (entry.actionResult && entry.actionResult.step && entry.actionResult.step.safetyDecision) return entry.actionResult.step.safetyDecision;
+	return null;
 }
 
 function requiresHumanConfirmation(result) {

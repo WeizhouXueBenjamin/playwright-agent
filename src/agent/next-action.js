@@ -26,7 +26,7 @@ function determineNextAction(semanticPage, profile, options = {}) {
 		};
 	}
 
-	const blockingReviewItem = plan.reviewItems.find((item) => item.field && item.field.required);
+	const blockingReviewItem = findBlockingReviewItem(plan.reviewItems);
 	if (blockingReviewItem) {
 		return {
 			type: "needs-review",
@@ -51,6 +51,12 @@ function determineNextAction(semanticPage, profile, options = {}) {
 		reason: "No pending safe action found.",
 		context: { adaptiveReasoning, matches, plan },
 	};
+}
+
+function findBlockingReviewItem(reviewItems) {
+	const requiredReviewItems = (reviewItems || []).filter((item) => item.field && item.field.required);
+	return requiredReviewItems.find((item) => item.safetyDecision && item.safetyDecision.requiresReview)
+		|| requiredReviewItems[0];
 }
 
 function buildAdaptiveDecision(adaptiveReasoning) {

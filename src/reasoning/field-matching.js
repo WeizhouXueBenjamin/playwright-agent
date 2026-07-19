@@ -1,4 +1,5 @@
 const { listProfileProperties } = require("../profile/profile-properties");
+const { classifyFieldIntent, evaluateFieldAnswerSafety } = require("./field-answer-safety");
 const { scoreTextMatch } = require("./text-similarity");
 
 const MATCHABLE_KINDS = new Set(["text-input", "checkbox", "radio", "selection", "editable", "file-upload", "interactive"]);
@@ -8,21 +9,31 @@ function matchFieldsToProfile(semanticPage, profile, options = {}) {
 	const profileProperties = listProfileProperties(profile);
 
 	return getMatchableFields(semanticPage).map((field) => {
+		const fieldAnswerSafety = classifyFieldIntent(field);
 		const candidates = rankProfileCandidates(field, profileProperties);
-		const bestCandidate = candidates[0];
+		const bestCandidate = selectBestCandidate(field, candidates, threshold, fieldAnswerSafety);
 
 		if (!bestCandidate || bestCandidate.confidenceScore < threshold) {
-			return {
+			const fallbackCandidate = selectRejectedCandidate(field, candidates, threshold, fieldAnswerSafety);
+			const safetyDecision = evaluateFieldAnswerSafety(field, fallbackCandidate);
+			const match = {
 				field: describeField(field),
+				fieldAnswerSafety,
 				matchedProfileProperty: null,
 				confidenceScore: 0,
-				reasoning: "No profile property met the confidence threshold.",
+				reasoning: safetyDecision.requiresReview
+					? `Safety guard blocked this field: ${safetyDecision.reason}.`
+					: "No profile property met the confidence threshold.",
 				candidates: candidates.slice(0, 3),
 			};
+			if (fieldAnswerSafety.riskLevel === "high") match.safetyDecision = safetyDecision;
+			return match;
 		}
 
-		return {
+		const safetyDecision = evaluateFieldAnswerSafety(field, bestCandidate);
+		const match = {
 			field: describeField(field),
+			fieldAnswerSafety,
 			matchedProfileProperty: {
 				path: bestCandidate.path,
 				valueType: bestCandidate.valueType,
@@ -33,6 +44,31 @@ function matchFieldsToProfile(semanticPage, profile, options = {}) {
 			reasoning: bestCandidate.reasoning,
 			candidates: candidates.slice(0, 3),
 		};
+		if (fieldAnswerSafety.riskLevel === "high") match.safetyDecision = safetyDecision;
+		return match;
+	});
+}
+
+function selectRejectedCandidate(field, candidates, threshold, fieldAnswerSafety) {
+	if (fieldAnswerSafety.riskLevel !== "high") {
+		return candidates.find((candidate) => candidate.confidenceScore >= threshold) || null;
+	}
+
+	const rejectedAllowedCandidate = candidates.find((candidate) => {
+		if (candidate.confidenceScore < threshold) return false;
+		const decision = evaluateFieldAnswerSafety(field, candidate);
+		return !decision.allowed && decision.reason !== "sensitive-field-unsafe-profile-match";
+	});
+
+	return rejectedAllowedCandidate || candidates.find((candidate) => candidate.confidenceScore >= threshold) || null;
+}
+
+function selectBestCandidate(field, candidates, threshold, fieldAnswerSafety) {
+	if (fieldAnswerSafety.riskLevel !== "high") return candidates[0];
+
+	return candidates.find((candidate) => {
+		if (candidate.confidenceScore < threshold) return false;
+		return evaluateFieldAnswerSafety(field, candidate).allowed;
 	});
 }
 
@@ -126,6 +162,7 @@ function describeField(field) {
 		state: field.state || {},
 		validation: field.validation || { valid: true, message: "" },
 		options: field.options || [],
+		constraints: field.constraints || {},
 	};
 }
 

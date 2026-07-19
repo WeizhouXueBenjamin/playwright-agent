@@ -72,7 +72,51 @@ function classifyExecutionFailures(report) {
 		failures.push(failure("Reasoning", "The agent required human review.", "The workflow could not be completed within current generic confidence boundaries.", "Improve generic reasoning confidence and unsupported-page classification."));
 	}
 
+	for (const safetyDecision of collectSafetyDecisions(report)) {
+		if (safetyDecision.allowed) continue;
+		failures.push(failure(
+			"Reasoning",
+			`Safety guard blocked ${safetyDecision.fieldIntent}: ${safetyDecision.reason}.`,
+			"The agent correctly avoided guessing a sensitive application answer.",
+			"Collect an explicit user-approved profile value or current-statement authorization before answering this field.",
+		));
+	}
+
 	return failures;
+}
+
+function collectSafetyDecisions(report) {
+	const decisions = [];
+
+	for (const entry of report.executionTimeline || []) {
+		if (entry.safetyDecision) decisions.push(entry.safetyDecision);
+		if (entry.decision && entry.decision.safetyDecision) decisions.push(entry.decision.safetyDecision);
+		if (entry.decision && entry.decision.details && entry.decision.details.safetyDecision) {
+			decisions.push(entry.decision.details.safetyDecision);
+		}
+		if (entry.action && entry.action.safetyDecision) decisions.push(entry.action.safetyDecision);
+	}
+
+	for (const action of report.executedActions || []) {
+		if (action.safetyDecision) decisions.push(action.safetyDecision);
+	}
+
+	return dedupeSafetyDecisions(decisions);
+}
+
+function dedupeSafetyDecisions(decisions) {
+	const seen = new Set();
+	const result = [];
+
+	for (const decision of decisions) {
+		if (!decision || typeof decision !== "object") continue;
+		const key = `${decision.fieldIntent}:${decision.reason}:${decision.matchedProperty || ""}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		result.push(decision);
+	}
+
+	return result;
 }
 
 function classifyPhaseFailure(phaseFailure) {

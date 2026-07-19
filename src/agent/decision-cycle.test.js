@@ -180,3 +180,60 @@ const completedFieldCycle = runDecisionCycle({
 
 assert.equal(completedFieldCycle.plannerDecision.type, "action");
 assert.equal(completedFieldCycle.plannerDecision.step.field.label.text, "Location (City)*");
+
+const sensitiveReviewCycle = runDecisionCycle({
+	goal: "Apply to role",
+	observation: {
+		...observation,
+		semanticPage: {
+			...observation.semanticPage,
+			interactiveElements: [
+				{
+					id: "unlabeled",
+					kind: "text-input",
+					role: "textbox",
+					tagName: "input",
+					inputType: "text",
+					label: { text: "", source: "none", confidence: 0 },
+					labelCandidates: [],
+					placeholder: "",
+					required: true,
+					disabled: false,
+					readonly: false,
+					state: { value: "" },
+					options: [],
+					validation: { valid: false, message: "Please fill in this field." },
+				},
+				{
+					id: "salary",
+					kind: "text-input",
+					role: "textbox",
+					tagName: "input",
+					inputType: "text",
+					label: { text: "Salary expectations*", source: "label", confidence: 0.98 },
+					labelCandidates: [{ text: "Salary expectations*", source: "label", confidence: 0.98 }],
+					placeholder: "",
+					required: true,
+					disabled: false,
+					readonly: false,
+					state: { value: "" },
+					options: [],
+					validation: { valid: true, message: "" },
+				},
+			],
+		},
+	},
+	profile: { targetRole: "Full-Stack Engineer" },
+	runtimeState: {
+		...runtimeState,
+		remainingRequiredFields: [
+			{ id: "unlabeled", label: { text: "", source: "none" } },
+			{ id: "salary", label: { text: "Salary expectations*", source: "label" } },
+		],
+	},
+	options: {},
+});
+
+assert.equal(sensitiveReviewCycle.plannerDecision.type, "needs-review");
+assert.equal(sensitiveReviewCycle.plannerDecision.details.safetyDecision.fieldIntent, "salary-expectation");
+assert.equal(sensitiveReviewCycle.decision.safetyDecision.reason, "salary-expectation-requires-explicit-answer");

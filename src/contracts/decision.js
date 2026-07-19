@@ -34,6 +34,8 @@ function buildDecisionContract(input) {
 	};
 
 	if (plannerDecision.reason) decision.reason = plannerDecision.reason;
+	const safetyDecision = extractSafetyDecision(plannerDecision);
+	if (safetyDecision) decision.safetyDecision = safetyDecision;
 	if (chosenAction) {
 		decision.action = chosenAction.type;
 		decision.field = chosenAction.field;
@@ -68,13 +70,22 @@ function assertDecisionContract(decision) {
 function summarizeAction(step) {
 	if (!step) return null;
 
-	return {
+	const action = {
 		type: step.action,
 		field: step.field && step.field.label,
 		profileProperty: step.profileProperty,
 		confidenceScore: step.confidenceScore,
 		expectedState: step.verification && step.verification.expectedState,
 	};
+	if (step.safetyDecision) action.safetyDecision = step.safetyDecision;
+	return action;
+}
+
+function extractSafetyDecision(plannerDecision) {
+	if (plannerDecision.safetyDecision) return plannerDecision.safetyDecision;
+	if (plannerDecision.step && plannerDecision.step.safetyDecision) return plannerDecision.step.safetyDecision;
+	if (plannerDecision.details && plannerDecision.details.safetyDecision) return plannerDecision.details.safetyDecision;
+	return null;
 }
 
 function inferRiskAssessment(plannerDecision, terminalState) {
