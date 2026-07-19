@@ -11,7 +11,7 @@ function determineNextAction(semanticPage, profile, options = {}) {
 
 	const matches = matchFieldsToProfile(semanticPage, profile, options.matching);
 	const plan = buildExecutionPlan(matches, options.planning);
-	const pendingStep = plan.steps.find((step) => !isStepAlreadySatisfied(step));
+	const pendingStep = plan.steps.find((step) => !isStepAlreadySatisfied(step, options.runtimeState));
 
 	if (pendingStep) {
 		return {
@@ -101,7 +101,9 @@ function buildAdaptiveDecision(adaptiveReasoning) {
 		};
 }
 
-function isStepAlreadySatisfied(step) {
+function isStepAlreadySatisfied(step, runtimeState = {}) {
+	if (isStepCompletedInRuntimeState(step, runtimeState)) return true;
+
 	const state = step.field.state || {};
 	const expected = step.actionValue;
 
@@ -123,6 +125,18 @@ function isStepAlreadySatisfied(step) {
 	}
 
 	return false;
+}
+
+function isStepCompletedInRuntimeState(step, runtimeState) {
+	if (!step.profileProperty || !step.profileProperty.path) return false;
+	const label = step.field && step.field.label && step.field.label.text || "";
+	if (!label) return false;
+
+	return (runtimeState.completedFields || []).some((field) => {
+		return field.profilePropertyPath === step.profileProperty.path
+			&& field.label
+			&& field.label.text === label;
+	});
 }
 
 function findSafeNavigationStep(semanticPage) {

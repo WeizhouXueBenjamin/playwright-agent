@@ -118,3 +118,65 @@ assert.equal(applicationEntryCycle.plannerDecision.step.action, "click");
 assert.equal(applicationEntryCycle.plannerDecision.step.field.kind, "link");
 assert.equal(applicationEntryCycle.terminalState.reached, false);
 assert.equal(applicationEntryCycle.decision.riskAssessment.level, "low");
+
+const completedFieldCycle = runDecisionCycle({
+	goal: "Apply to role",
+	observation: {
+		...observation,
+		semanticPage: {
+			...observation.semanticPage,
+			interactiveElements: [
+				{
+					id: "country",
+					kind: "text-input",
+					role: "combobox",
+					tagName: "input",
+					inputType: "",
+					label: { text: "Country*", source: "label", confidence: 0.98 },
+					labelCandidates: [{ text: "Country*", source: "label", confidence: 0.98 }],
+					placeholder: "",
+					required: true,
+					disabled: false,
+					readonly: false,
+					state: { value: "" },
+					options: [],
+					validation: { valid: true, message: "" },
+				},
+				{
+					id: "city",
+					kind: "text-input",
+					role: "textbox",
+					tagName: "input",
+					inputType: "",
+					label: { text: "Location (City)*", source: "label", confidence: 0.98 },
+					labelCandidates: [{ text: "Location (City)*", source: "label", confidence: 0.98 }],
+					placeholder: "",
+					required: true,
+					disabled: false,
+					readonly: false,
+					state: { value: "" },
+					options: [],
+					validation: { valid: true, message: "" },
+				},
+			],
+		},
+	},
+	profile: { country: "New Zealand", city: "Auckland" },
+	runtimeState: {
+		...runtimeState,
+		completedFields: [
+			{
+				fieldId: "country",
+				label: { text: "Country*", source: "label" },
+				profilePropertyPath: "country",
+			},
+		],
+		remainingRequiredFields: [
+			{ id: "city", label: { text: "Location (City)*", source: "label" } },
+		],
+	},
+	options: {},
+});
+
+assert.equal(completedFieldCycle.plannerDecision.type, "action");
+assert.equal(completedFieldCycle.plannerDecision.step.field.label.text, "Location (City)*");

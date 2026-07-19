@@ -34,10 +34,24 @@ async function main() {
 	const reportDir = path.join(baseline.rootDir, "reports");
 	const benchmarkMarkdown = await fs.readFile(path.join(reportDir, "benchmark.md"), "utf8");
 	const backlogMarkdown = await fs.readFile(path.join(reportDir, "backlog.md"), "utf8");
+	const postmortemMarkdown = await fs.readFile(path.join(reportDir, "postmortem.md"), "utf8");
+	const capabilityHistory = await fs.readFile(path.join(rootDir, "capability-history.json"), "utf8");
+	const capabilityMarkdown = await fs.readFile(path.join(rootDir, "capability-evolution-log.md"), "utf8");
 	assert.equal(benchmarkMarkdown.includes("# Summary"), true);
 	assert.equal(benchmarkMarkdown.includes("Health Score"), true);
+	assert.equal(benchmarkMarkdown.includes("# Efficiency Metrics"), true);
+	assert.equal(benchmarkMarkdown.includes("Repeated Field Attempts"), true);
+	assert.equal(benchmarkMarkdown.includes("# Task Outcome"), true);
+	assert.equal(benchmarkMarkdown.includes("Blocker Capability"), true);
 	assert.equal(benchmarkMarkdown.includes("# Historical Comparison"), true);
 	assert.equal(backlogMarkdown.includes("| Priority | Area | Issue | Suggested Fix | Estimated Impact | Status |"), true);
+	assert.equal(postmortemMarkdown.includes("# RWVS Post-mortem"), true);
+	assert.equal(postmortemMarkdown.includes("## V2 Layer Diagnosis"), true);
+	assert.equal(postmortemMarkdown.includes("## Capability Gap"), true);
+	assert.equal(postmortemMarkdown.includes("## Regression Replay Result"), true);
+	assert.equal(capabilityHistory.includes("capability-evolution-history"), true);
+	assert.equal(capabilityMarkdown.includes("# Capability Evolution Log"), true);
+	assert.equal(Object.prototype.hasOwnProperty.call(baseline.report, "capabilityHistory"), false);
 
 	const regression = await runRealWebsiteValidation({
 		...commonInput,

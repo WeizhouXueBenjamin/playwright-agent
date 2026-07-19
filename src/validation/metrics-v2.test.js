@@ -85,9 +85,140 @@ assert.equal(metrics.decision.requiredFieldProgressionScore, 0.5);
 assert.equal(metrics.decision.strategyConsistencyScore, 1);
 assert.equal(metrics.page.applicableCoverageRatio, 1);
 assert.equal(metrics.page.legacyCoverageRatio, 0.22);
+assert.equal(metrics.task.efficiency.totalActions, 0);
+assert.equal(metrics.task.efficiency.repeatedFieldAttempts, 0);
+assert.equal(metrics.task.efficiency.skippedVerifiedFields, 0);
+assert.equal(metrics.task.efficiency.averageActionsPerCompletedField, 0);
+assert.equal(metrics.task.efficiency.redundantActionRatio, 0);
+assert.equal(metrics.task.outcome.status, "needs-review");
 
 const health = buildLayeredHealthV2(metrics);
 assert.equal(health.mode, "layered-health-v2");
 assert.equal(typeof health.observationHealth.score, "number");
 assert.equal(typeof health.decisionHealth.inputs.policyCompliance, "number");
 assert.equal(health.benchmarkHealth.inputs.pageHealth, health.pageHealth.score / 100);
+
+const repeatedFieldMetrics = buildMetricsV2({
+	executionReport: {
+		status: "awaiting-human-confirmation",
+		executedActions: [
+			{
+				action: "select-option",
+				field: { text: "Country" },
+				profileProperty: { path: "country" },
+			},
+			{
+				action: "select-option",
+				field: { text: "Country" },
+				profileProperty: { path: "country" },
+			},
+			{
+				action: "select-option",
+				field: { text: "Country" },
+				profileProperty: { path: "country" },
+			},
+			{
+				action: "fill-text",
+				field: { text: "City" },
+				profileProperty: { path: "city" },
+			},
+		],
+		finalRuntimeState: {
+			completedFields: [
+				{
+					label: { text: "Country" },
+					profilePropertyPath: "country",
+				},
+				{
+					label: { text: "City" },
+					profilePropertyPath: "city",
+				},
+			],
+		},
+	},
+});
+
+assert.equal(repeatedFieldMetrics.task.efficiency.totalActions, 4);
+assert.equal(repeatedFieldMetrics.task.efficiency.repeatedFieldAttempts, 2);
+assert.equal(repeatedFieldMetrics.task.efficiency.skippedVerifiedFields, 1);
+assert.equal(repeatedFieldMetrics.task.efficiency.averageActionsPerCompletedField, 2);
+assert.equal(repeatedFieldMetrics.task.efficiency.redundantActionRatio, 0.5);
+
+const needsReviewOutcomeMetrics = buildMetricsV2({
+	executionReport: {
+		status: "needs-review",
+		reason: "required-field-needs-review",
+		verificationResults: [],
+		executionTimeline: [
+			{
+				terminalState: {
+					reached: true,
+					status: "needs-review",
+					reason: "required-field-needs-review",
+				},
+			},
+		],
+		finalRuntimeState: {
+			remainingRequiredFields: [
+				{ label: { text: "" } },
+			],
+		},
+	},
+	failureReport: {
+		failures: [
+			{
+				area: "Detection",
+				rootCause: "Required field cannot be safely matched without a label.",
+			},
+		],
+	},
+});
+
+assert.equal(needsReviewOutcomeMetrics.task.outcome.status, "needs-review");
+assert.equal(needsReviewOutcomeMetrics.task.outcome.reason, "required-field-needs-review");
+assert.equal(needsReviewOutcomeMetrics.task.outcome.blockerLayer, "Task");
+assert.equal(needsReviewOutcomeMetrics.task.outcome.blockerCapability, "Field Identification");
+assert.equal(needsReviewOutcomeMetrics.task.outcome.safetyOutcome, "safe-stop");
+
+const policyStoppedOutcomeMetrics = buildMetricsV2({
+	executionReport: {
+		status: "awaiting-human-confirmation",
+		reason: "irreversible-action-needs-confirmation",
+		stoppedBeforeIrreversibleAction: true,
+		executionTimeline: [
+			{
+				terminalState: {
+					reached: true,
+					status: "awaiting-human-confirmation",
+					reason: "irreversible-action-needs-confirmation",
+					policyEvaluation: {
+						allowed: false,
+						status: "requires-confirmation",
+						reason: "final-submit",
+					},
+				},
+			},
+		],
+	},
+});
+
+assert.equal(policyStoppedOutcomeMetrics.task.outcome.status, "policy-stopped");
+assert.equal(policyStoppedOutcomeMetrics.task.outcome.blockerLayer, "Decision");
+assert.equal(policyStoppedOutcomeMetrics.task.outcome.blockerCapability, "Safety / Policy");
+assert.equal(policyStoppedOutcomeMetrics.task.outcome.safetyOutcome, "safe-stop");
+
+const maxCyclesOutcomeMetrics = buildMetricsV2({
+	executionReport: {
+		status: "max-cycles-reached",
+		reason: "The autonomous loop reached its configured cycle limit.",
+		executionTimeline: [],
+		finalRuntimeState: {
+			currentExecutionStatus: "max-cycles-reached",
+		},
+	},
+});
+
+assert.equal(maxCyclesOutcomeMetrics.task.outcome.status, "max-cycles");
+assert.equal(maxCyclesOutcomeMetrics.task.outcome.blockerLayer, "Task");
+assert.equal(maxCyclesOutcomeMetrics.task.outcome.blockerCapability, "Runtime State Planning");
+assert.equal(maxCyclesOutcomeMetrics.task.outcome.safetyOutcome, "bounded-stop");

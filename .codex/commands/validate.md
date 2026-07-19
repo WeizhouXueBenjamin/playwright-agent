@@ -36,11 +36,26 @@ Do not perform speculative architectural work.
 
 Do not introduce abstractions unless benchmark evidence demonstrates the need.
 
+Benchmark Model V2 is additive. Preserve existing V1 report fields and V1 regression behavior, and reuse the dual-track V1/V2 output for explanation.
+
+V1 remains the compatibility and regression track.
+
+V2 is the explainability track:
+
+- Observation metrics
+- Decision metrics
+- Page metrics
+- Task metrics
+- Benchmark metrics
+- layered health scores
+- Page Profile
+- Applicable Components
+
 ---
 
 # Target Website
 
-<https://eit.qjumpersjobs.co/jobs/details/Systems_Support_Technician%2C_Auckland-1103989?source=seek&seek-token=2JENkw7A6VpqExvEFvP8pG>
+<https://job-boards.greenhouse.io/released/jobs/7802196003>
 
 ---
 
@@ -59,7 +74,7 @@ The purpose is to discover weaknesses in the Browser AI Agent.
 ---
 
 # Execution Rules
-Execution Mode: headed
+Execution Mode: headed, persistent
 
 Browser: Chromium
 
@@ -161,10 +176,22 @@ Validate whether the agent correctly detects:
 
 Measure:
 
-- component coverage
+- V1 legacy fixed component coverage
+- V2 applicable component coverage
 - confidence
 - unsupported components
 - ambiguous detections
+
+Validate V2 fields:
+
+- pageProfile.type
+- pageProfile.evidence
+- applicableComponents.required
+- applicableComponents.optional
+- legacyCoverageRatio
+- applicableCoverageRatio
+- missingApplicableComponents
+- non-applicable V1 missing-component noise
 
 Generate:
 
@@ -217,6 +244,16 @@ Attempt recovery.
 
 Continue benchmarking whenever safe.
 
+Decision metrics must be derived from execution artifacts only:
+
+- executionTimeline
+- verificationResults
+- policyEvaluation
+- runtimeTimeline
+- finalRuntimeState
+
+Do not use LLM subjective scoring for decision correctness.
+
 ---
 
 # Phase 4 — Failure Analysis
@@ -247,6 +284,10 @@ Runtime State
 
 Policy
 
+Page Profile
+
+Applicable Components
+
 For every failure include:
 
 - description
@@ -255,6 +296,7 @@ For every failure include:
 - impact
 - reproducibility
 - recommended generic improvement
+- whether V1 or V2 explains it better
 
 Avoid website-specific fixes.
 
@@ -284,15 +326,29 @@ Generate:
 - regression.md
 - health.md
 
-Include:
+Include V1 compatibility metrics:
 
 - success rate
-- component coverage
+- legacy component coverage
 - execution time
 - recovery count
 - verification failures
 - runtime errors
-- benchmark score
+- legacy health score
+- V1 regression status
+
+Include V2 explainability output:
+
+- Page Profile
+- Applicable Coverage
+- Decision Metrics
+- Layered Health
+- V1 vs V2 Explainability
+- Observation / Decision / Page / Task / Benchmark layer diagnosis
+
+Do not treat a V2 score increase as the primary success criterion.
+
+The primary V2 success criterion is better explainability from objective report data.
 
 ---
 
@@ -314,9 +370,13 @@ Produce:
 
 7. Benchmark Metrics
 
-8. Regression Summary
+8. V2 Layered Metrics
 
-9. Agent Health Score
+9. Regression Summary
+
+10. Agent Health Score
+
+11. V1 vs V2 Explainability Summary
 
 ---
 

@@ -31,6 +31,14 @@ function buildBenchmarkMarkdown(report) {
 		"",
 		table(["Metric", "Value"], decisionMetricRows(report)),
 		"",
+		"# Efficiency Metrics",
+		"",
+		table(["Metric", "Value"], efficiencyMetricRows(report)),
+		"",
+		"# Task Outcome",
+		"",
+		table(["Field", "Value"], taskOutcomeRows(report)),
+		"",
 		"# Layered Health",
 		"",
 		table(["Layer", "Score", "Grade", "Inputs", "Weights"], layeredHealthRows(report)),
@@ -66,6 +74,65 @@ function buildBacklogMarkdown(backlog) {
 			item.estimatedImpact,
 			item.status,
 		])),
+		"",
+	].join("\n");
+}
+
+function buildPostmortemMarkdown(report, options = {}) {
+	return [
+		"# RWVS Post-mortem",
+		"",
+		"## Task Summary",
+		"",
+		table(["Field", "Value"], taskSummaryRows(report)),
+		"",
+		"## V1 Result",
+		"",
+		table(["Metric", "Value"], v1ResultRows(report)),
+		"",
+		"## V2 Layer Diagnosis",
+		"",
+		table(["Layer", "Score", "Grade", "Diagnosis"], v2LayerDiagnosisRows(report)),
+		"",
+		"## Page Profile",
+		"",
+		table(["Field", "Value"], pageProfileRows(report)),
+		"",
+		"## Applicable Coverage",
+		"",
+		table(["Metric", "Value"], applicableCoverageRows(report)),
+		"",
+		"## Decision Metrics",
+		"",
+		table(["Metric", "Value"], decisionMetricRows(report)),
+		"",
+		"## Efficiency Metrics",
+		"",
+		table(["Metric", "Value"], efficiencyMetricRows(report)),
+		"",
+		"## Task Outcome",
+		"",
+		table(["Field", "Value"], taskOutcomeRows(report)),
+		"",
+		"## Blocking Issue",
+		"",
+		table(["Area", "Root Cause", "Impact"], blockingIssueRows(report)),
+		"",
+		"## Capability Gap",
+		"",
+		table(["Capability", "Gap", "Layer"], capabilityGapRows(report)),
+		"",
+		"## Evidence",
+		"",
+		table(["Source", "Evidence"], evidenceRows(report, options.executionReport)),
+		"",
+		"## Suggested Generic Improvement",
+		"",
+		table(["Priority", "Area", "Suggested Fix", "Status"], suggestedImprovementRows(report)),
+		"",
+		"## Regression Replay Result",
+		"",
+		table(["Field", "Value"], regressionReplayRows(report)),
 		"",
 	].join("\n");
 }
@@ -118,6 +185,188 @@ function decisionMetricRows(report) {
 		["Required Field Progression Score", formatPercent(decision.requiredFieldProgressionScore)],
 		["Strategy Consistency Score", formatPercent(decision.strategyConsistencyScore)],
 	];
+}
+
+function efficiencyMetricRows(report) {
+	const efficiency = report.metricsV2 && report.metricsV2.task && report.metricsV2.task.efficiency || {};
+	return [
+		["Total Actions", efficiency.totalActions || 0],
+		["Repeated Field Attempts", efficiency.repeatedFieldAttempts || 0],
+		["Skipped Verified Fields", efficiency.skippedVerifiedFields || 0],
+		["Average Actions Per Completed Field", efficiency.averageActionsPerCompletedField || 0],
+		["Redundant Action Ratio", formatPercent(efficiency.redundantActionRatio || 0)],
+	];
+}
+
+function taskOutcomeRows(report) {
+	const outcome = report.metricsV2 && report.metricsV2.task && report.metricsV2.task.outcome || {};
+	return [
+		["Status", outcome.status || "unknown"],
+		["Reason", outcome.reason || ""],
+		["Blocker Layer", outcome.blockerLayer || "none"],
+		["Blocker Capability", outcome.blockerCapability || "none"],
+		["Safety Outcome", outcome.safetyOutcome || "unknown"],
+	];
+}
+
+function taskSummaryRows(report) {
+	const task = report.metricsV2 && report.metricsV2.task || {};
+	return [
+		["Website", report.website || ""],
+		["Run ID", report.runId || ""],
+		["Finished At", report.finishedAt || ""],
+		["Execution Status", task.status || "unknown"],
+		["Completed Fields", task.completedFieldCount || 0],
+		["Executed Actions", task.executedActionCount || 0],
+	];
+}
+
+function v1ResultRows(report) {
+	const metrics = report.metrics || {};
+	return [
+		["Result", report.result || ""],
+		["Success Rate", formatPercent(metrics.successRate)],
+		["Coverage", formatPercent(metrics.coverage)],
+		["Health Score", `${metrics.healthScore} (${metrics.healthGrade})`],
+		["Regression Status", report.regression ? report.regression.status : "unknown"],
+	];
+}
+
+function v2LayerDiagnosisRows(report) {
+	const health = report.healthV2 || {};
+	return [
+		["Observation", health.observationHealth],
+		["Decision", health.decisionHealth],
+		["Page", health.pageHealth],
+		["Task", health.taskHealth],
+		["Benchmark", health.benchmarkHealth],
+	].map(([layer, value]) => [
+		layer,
+		value ? value.score : "n/a",
+		value ? value.grade : "n/a",
+		value ? diagnosisForLayer(layer, value) : "n/a",
+	]);
+}
+
+function diagnosisForLayer(layer, health) {
+	const inputs = health.inputs || {};
+	const lowest = Object.entries(inputs)
+		.sort((a, b) => Number(a[1]) - Number(b[1]))[0];
+	if (!lowest) return `${layer} inputs unavailable`;
+	return `${lowest[0]}=${formatDecimal(lowest[1])}`;
+}
+
+function blockingIssueRows(report) {
+	const failure = selectBlockingFailure(report);
+	if (!failure) {
+		const outcome = report.metricsV2 && report.metricsV2.task && report.metricsV2.task.outcome || {};
+		return [[outcome.blockerLayer || "None", outcome.reason || "No blocking failure detected", "Derived from task outcome"]];
+	}
+	return [[failure.area, failure.rootCause, failure.impact || ""]];
+}
+
+function capabilityGapRows(report) {
+	const outcome = report.metricsV2 && report.metricsV2.task && report.metricsV2.task.outcome || {};
+	const failure = selectBlockingFailure(report);
+	return [[
+		outcome.blockerCapability || "none",
+		failure ? failure.rootCause : outcome.reason || "none",
+		outcome.blockerLayer || "none",
+	]];
+}
+
+function evidenceRows(report, executionReport = {}) {
+	const outcome = report.metricsV2 && report.metricsV2.task && report.metricsV2.task.outcome || {};
+	const decision = report.metricsV2 && report.metricsV2.decision || {};
+	const efficiency = report.metricsV2 && report.metricsV2.task && report.metricsV2.task.efficiency || {};
+	const terminalState = getTerminalState(executionReport);
+	const failure = selectBlockingFailure(report);
+	const rows = [
+		["metricsV2.task.outcome", compactJson(outcome)],
+		["metricsV2.decision", `decisionCount=${decision.decisionCount || 0}; needsReviewCount=${decision.needsReviewCount || 0}; policyViolationCount=${decision.policyViolationCount || 0}`],
+		["metricsV2.task.efficiency", `totalActions=${efficiency.totalActions || 0}; repeatedFieldAttempts=${efficiency.repeatedFieldAttempts || 0}; redundantActionRatio=${formatPercent(efficiency.redundantActionRatio || 0)}`],
+	];
+	if (terminalState.reason || terminalState.status) {
+		rows.push(["executionReport.terminalState", compactJson({
+			status: terminalState.status,
+			reason: terminalState.reason,
+		})]);
+	}
+	if (failure) {
+		rows.push(["failureReport", `${failure.area}: ${failure.rootCause}`]);
+	}
+	return rows;
+}
+
+function suggestedImprovementRows(report) {
+	const item = selectBacklogItem(report);
+	if (!item) {
+		const outcome = report.metricsV2 && report.metricsV2.task && report.metricsV2.task.outcome || {};
+		return [["P2", outcome.blockerLayer || "Benchmark", genericImprovementForCapability(outcome.blockerCapability), "Open"]];
+	}
+	return [[item.priority, item.area, item.suggestedFix, item.status]];
+}
+
+function regressionReplayRows(report) {
+	if (!report.regression) return [["Status", "unknown"]];
+	if (report.regression.status === "NO_BASELINE") return [["Status", "NO_BASELINE"]];
+	return [
+		["Status", report.regression.status],
+		["Regression Count", (report.regression.regressions || []).length],
+	];
+}
+
+function selectBlockingFailure(report) {
+	const failures = report.failureReport && report.failureReport.failures || [];
+	const outcome = report.metricsV2 && report.metricsV2.task && report.metricsV2.task.outcome || {};
+	if (!failures.length) return null;
+	const capability = String(outcome.blockerCapability || "").toLowerCase();
+	if (capability.includes("policy")) {
+		return failures.find((failure) => {
+			const text = failureText(failure);
+			return text.includes("login") || text.includes("policy") || text.includes("confirmation") || text.includes("submit");
+		}) || null;
+	}
+	if (capability.includes("field")) {
+		return failures.find((failure) => {
+			const text = failureText(failure);
+			return text.includes("required field") || text.includes("label");
+		}) || failures.find((failure) => failureText(failure).includes("component")) || failures[0];
+	}
+	if (capability.includes("verification")) return failures.find((failure) => failureText(failure).includes("verification")) || failures[0];
+	if (capability.includes("recovery")) return failures.find((failure) => failureText(failure).includes("recovery")) || failures[0];
+	return failures[0];
+}
+
+function selectBacklogItem(report) {
+	const items = report.backlog && report.backlog.items || [];
+	const failure = selectBlockingFailure(report);
+	if (!items.length) return null;
+	if (!failure) return null;
+	return items.find((item) => item.area === failure.area && item.issue === failure.rootCause) || items[0];
+}
+
+function failureText(failure) {
+	return `${failure.area || ""} ${failure.rootCause || ""}`.toLowerCase();
+}
+
+function genericImprovementForCapability(capability) {
+	const improvements = {
+		"Policy Navigation": "Improve generic safe navigation classification for application-entry and authentication-gated transitions.",
+		"Runtime State Planning": "Use runtime state evidence to avoid repeated or non-progressing actions across cycles.",
+		"Field Identification": "Improve label association and required-field detection using generic semantic context.",
+		Verification: "Improve action-specific verification using observed runtime state changes.",
+		Recovery: "Add generic fallback strategies after classifying the blocking failure.",
+		"Safety / Policy": "Preserve final-submit blocking while improving policy explanations for safe stops.",
+	};
+	return improvements[capability] || "Continue collecting objective benchmark evidence before changing agent behavior.";
+}
+
+function getTerminalState(executionReport) {
+	return (executionReport.executionTimeline || [])
+		.map((entry) => entry.terminalState)
+		.filter((terminal) => terminal && terminal.reached)
+		.pop() || {};
 }
 
 function layeredHealthRows(report) {
@@ -227,6 +476,12 @@ function compactJson(value) {
 	return JSON.stringify(value);
 }
 
+function formatDecimal(value) {
+	const number = Number(value);
+	if (!Number.isFinite(number)) return String(value);
+	return Math.round(number * 100) / 100;
+}
+
 function formatPercent(value) {
 	if (value === null || value === undefined) return "n/a";
 	return `${Math.round(value * 100)}%`;
@@ -235,4 +490,5 @@ function formatPercent(value) {
 module.exports = {
 	buildBacklogMarkdown,
 	buildBenchmarkMarkdown,
+	buildPostmortemMarkdown,
 };

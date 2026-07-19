@@ -26,6 +26,8 @@
 		"test:partial-execution": "node src/execution/partial-execution-runner.test.js",
 		"test:reasoning": "node src/reasoning/adaptive-reasoning.test.js",
 		"test:rwvs": "node src/rwvs/rwvs-runner.test.js",
+		"test:postmortem": "node src/rwvs/postmortem-report.test.js",
+		"test:capability-evolution": "node src/rwvs/capability-evolution.test.js",
 		"test:executor": "node src/agent/executor.test.js",
 		"test:field-matching": "node src/reasoning/field-matching.test.js",
 		"test:policy": "node src/policy/policy-engine.test.js",

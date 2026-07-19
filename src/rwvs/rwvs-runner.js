@@ -10,7 +10,8 @@ const { buildMetricsV2 } = require("../validation/metrics-v2");
 const { validateApplicationComponents } = require("../validation/component-validation-runner");
 const { buildImprovementBacklog, buildImprovementSummary } = require("./backlog");
 const { buildFailureReport } = require("./failure-analysis");
-const { buildBacklogMarkdown, buildBenchmarkMarkdown } = require("./markdown-report");
+const { buildBacklogMarkdown, buildBenchmarkMarkdown, buildPostmortemMarkdown } = require("./markdown-report");
+const { updateCapabilityEvolutionArtifacts } = require("./capability-evolution");
 const { evaluateRegression, loadPreviousRwvsReport } = require("./regression-gate");
 const { createWebsiteId } = require("./site-id");
 
@@ -60,6 +61,7 @@ async function runRealWebsiteValidation(input, options = {}) {
 		improvementSummary,
 		benchmarkReport,
 	});
+	await writeCapabilityEvolutionArtifacts(context, benchmarkReport);
 
 	return {
 		runId,
@@ -124,7 +126,10 @@ async function runExecutionPhase(context) {
 function buildRwvsBenchmarkReport(context, failureReport, backlog, improvementSummary, finishedAt) {
 	const metrics = buildMetrics(context);
 	const health = buildHealthScore(metrics);
-	const metricsV2 = buildMetricsV2(context);
+	const metricsV2 = buildMetricsV2({
+		...context,
+		failureReport,
+	});
 	const healthV2 = buildLayeredHealthV2(metricsV2);
 	metrics.healthScore = health.score;
 	metrics.healthGrade = health.grade;
@@ -221,7 +226,19 @@ async function writeRwvsArtifacts(context, artifacts) {
 	await writeJsonArtifact(context.dirs.reports, "backlog.json", artifacts.backlog);
 	await writeTextArtifact(context.dirs.reports, "benchmark.md", buildBenchmarkMarkdown(artifacts.benchmarkReport));
 	await writeTextArtifact(context.dirs.reports, "backlog.md", buildBacklogMarkdown(artifacts.backlog));
+	await writeTextArtifact(context.dirs.reports, "postmortem.md", buildPostmortemMarkdown(artifacts.benchmarkReport, {
+		executionReport: context.executionReport,
+	}));
 	await writeJsonArtifact(context.dirs.history, `${context.runId}.json`, artifacts.benchmarkReport);
+}
+
+async function writeCapabilityEvolutionArtifacts(context, benchmarkReport) {
+	const capabilityDir = context.options.capabilityHistoryDir
+		? path.resolve(context.options.capabilityHistoryDir)
+		: path.dirname(context.rootDir);
+	await updateCapabilityEvolutionArtifacts(capabilityDir, benchmarkReport, {
+		executionReport: context.executionReport,
+	});
 }
 
 function buildDirs(rootDir) {
