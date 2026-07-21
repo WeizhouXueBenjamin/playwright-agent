@@ -2,7 +2,6 @@ function buildObservationStatePatch(previousState, observation, date = new Date(
 	const timestamp = date.toISOString();
 	const semanticPage = observation.semanticPage;
 	const detectedFields = (semanticPage.interactiveElements || []).map(toVerifiedFieldFact);
-	const detectedForms = (semanticPage.forms || []).map(toVerifiedFormFact);
 	const validationErrors = detectedFields
 		.filter((field) => field.validation && field.validation.valid === false)
 		.map((field) => ({
@@ -15,20 +14,17 @@ function buildObservationStatePatch(previousState, observation, date = new Date(
 	return {
 		currentUrl: semanticPage.url,
 		currentPageTitle: semanticPage.title,
-		currentBrowserState: "observed",
-		detectedForms,
 		detectedFields,
 		remainingRequiredFields: getRemainingRequiredFields(detectedFields),
 		validationErrors,
-		navigationHistory: appendNavigation(previousState.navigationHistory, semanticPage.url, semanticPage.title, timestamp),
 		updatedAt: timestamp,
 	};
 }
 
 function buildSuccessfulActionStatePatch(previousState, step, verification, date = new Date()) {
 	const timestamp = date.toISOString();
-	const completedActions = [
-		...previousState.completedActions,
+	const recentActions = [
+		...(previousState.recentActions || []),
 		{
 			action: step.action,
 			fieldId: step.field.id,
@@ -41,19 +37,19 @@ function buildSuccessfulActionStatePatch(previousState, step, verification, date
 				actual: verification.actual,
 			},
 		},
-	];
+	].slice(-10);
 
 	const completedFields = step.profileProperty
-		? upsertCompletedField(previousState.completedFields, step, verification, timestamp)
-		: previousState.completedFields;
+		? upsertCompletedField(previousState.completedFields || [], step, verification, timestamp)
+		: previousState.completedFields || [];
 
 	return {
-		completedActions,
+		recentActions,
 		completedFields,
-		remainingRequiredFields: previousState.remainingRequiredFields.filter((field) => field.id !== step.field.id),
-		uploadedFiles: updateUploadedFiles(previousState.uploadedFiles, step, verification, timestamp),
-		safetyMetrics: updateActionSafetyMetrics(previousState.safetyMetrics, step),
+		remainingRequiredFields: (previousState.remainingRequiredFields || []).filter((field) => field.id !== step.field.id),
+		uploadedFiles: updateUploadedFiles(previousState.uploadedFiles || [], step, verification, timestamp),
 		currentExecutionStatus: "running",
+		status: "running",
 		updatedAt: timestamp,
 	};
 }
@@ -64,26 +60,18 @@ function buildReviewAnswerStatePatch(previousState, reviewAnswer, date = new Dat
 
 	return {
 		reviewAnswers,
-		safetyMetrics: {
-			...getSafetyMetrics(previousState.safetyMetrics),
-			reviewAnswersProvided: reviewAnswers.length,
-		},
 		currentExecutionStatus: "running",
-		currentBrowserState: "active",
+		status: "running",
 		updatedAt: timestamp,
 	};
 }
 
 function buildReviewPromptStatePatch(previousState, reviewPrompt, date = new Date()) {
 	const timestamp = date.toISOString();
-	const metrics = getSafetyMetrics(previousState.safetyMetrics);
 
 	return {
 		pendingReviewPrompt: reviewPrompt,
-		safetyMetrics: {
-			...metrics,
-			sensitiveReviewItemsCreated: metrics.sensitiveReviewItemsCreated + 1,
-		},
+		manualReview: [...(previousState.manualReview || []), reviewPrompt],
 		updatedAt: timestamp,
 	};
 }
@@ -91,28 +79,16 @@ function buildReviewPromptStatePatch(previousState, reviewPrompt, date = new Dat
 function buildStatusStatePatch(status, date = new Date()) {
 	return {
 		currentExecutionStatus: status,
-		currentBrowserState: isTerminalStatus(status) ? "terminal" : "active",
+		status,
 		updatedAt: date.toISOString(),
 	};
 }
 
 function buildDecisionGateStatePatch(previousState, gateResult, date = new Date()) {
 	return {
-		decisionProvenanceMetrics: updateDecisionProvenanceMetrics(previousState.decisionProvenanceMetrics, gateResult),
+		decisionGateResults: [...(previousState.decisionGateResults || []), summarizeGateResult(gateResult)].slice(-20),
 		updatedAt: date.toISOString(),
 	};
-}
-
-function isTerminalStatus(status) {
-	return [
-		"awaiting-human-confirmation",
-		"completed",
-		"max-cycles-reached",
-		"needs-review",
-		"needs-user-confirmation",
-		"recovery-failed",
-		"verification-failed",
-	].includes(status);
 }
 
 function toVerifiedFieldFact(field) {
@@ -133,16 +109,6 @@ function toVerifiedFieldFact(field) {
 			disabled: Boolean(option.disabled),
 		})),
 		validation: sanitizeValidation(field.validation || {}),
-	};
-}
-
-function toVerifiedFormFact(form) {
-	return {
-		id: form.id,
-		label: form.label || "",
-		method: form.method || "",
-		actionPresent: Boolean(form.actionPresent),
-		controls: form.controls || [],
 	};
 }
 
@@ -186,20 +152,6 @@ function isFieldCompletedByObservedState(field) {
 	if (field.kind === "selection") return Boolean(field.state.value || field.state.selectedLabel);
 	if (Array.isArray(field.state.files)) return field.state.files.length > 0;
 	return Boolean(field.state.value);
-}
-
-function appendNavigation(history, url, title, timestamp) {
-	const lastEntry = history[history.length - 1];
-	if (lastEntry && lastEntry.url === url && lastEntry.title === title) return history;
-
-	return [
-		...history,
-		{
-			url,
-			title,
-			observedAt: timestamp,
-		},
-	];
 }
 
 function upsertCompletedField(completedFields, step, verification, timestamp) {
@@ -248,54 +200,11 @@ function upsertReviewAnswer(reviewAnswers, reviewAnswer) {
 	return reviewAnswers.map((answer, index) => index === existingIndex ? reviewAnswer : answer);
 }
 
-function updateActionSafetyMetrics(metrics, step) {
-	const next = getSafetyMetrics(metrics);
-	if (step.profileProperty && step.profileProperty.source === "explicit-user-review") {
-		next.reviewAnswersApplied += 1;
-	}
-	if (step.safetyDecision && step.safetyDecision.allowed === false) {
-		next.unsafeActionsExecuted += 1;
-	}
-	return next;
-}
-
-function getSafetyMetrics(metrics = {}) {
+function summarizeGateResult(gateResult = {}) {
 	return {
-		highRiskFieldsDetected: Number(metrics.highRiskFieldsDetected || 0),
-		unsafeMatchesRejected: Number(metrics.unsafeMatchesRejected || 0),
-		incompatibleValuesRejected: Number(metrics.incompatibleValuesRejected || 0),
-		sensitiveReviewItemsCreated: Number(metrics.sensitiveReviewItemsCreated || 0),
-		reviewAnswersProvided: Number(metrics.reviewAnswersProvided || 0),
-		reviewAnswersApplied: Number(metrics.reviewAnswersApplied || 0),
-		unsafeActionsExecuted: Number(metrics.unsafeActionsExecuted || 0),
-	};
-}
-
-function updateDecisionProvenanceMetrics(metrics = {}, gateResult = {}) {
-	const next = getDecisionProvenanceMetrics(metrics);
-	const semanticOwner = gateResult.provenance && gateResult.provenance.semanticOwner || "";
-	const approvalOwner = gateResult.provenance && gateResult.provenance.approvalOwner || "";
-
-	if (semanticOwner === "ai") next.aiSemanticDecisionCount += 1;
-	if (semanticOwner === "deterministic-semantic-rule") next.deterministicSemanticDecisionCount += 1;
-	if (approvalOwner === "safety-guard") next.safetyOverrideCount += 1;
-	if (approvalOwner === "policy") next.policyOverrideCount += 1;
-	if (gateResult.type === "review-item") next.reviewDecisionCount += 1;
-	if (semanticOwner === "ai" && gateResult.type === "approved-action") next.aiDecisionAcceptedCount += 1;
-	if (semanticOwner === "ai" && gateResult.type !== "approved-action") next.aiDecisionRejectedCount += 1;
-
-	return next;
-}
-
-function getDecisionProvenanceMetrics(metrics = {}) {
-	return {
-		aiSemanticDecisionCount: Number(metrics.aiSemanticDecisionCount || 0),
-		deterministicSemanticDecisionCount: Number(metrics.deterministicSemanticDecisionCount || 0),
-		safetyOverrideCount: Number(metrics.safetyOverrideCount || 0),
-		policyOverrideCount: Number(metrics.policyOverrideCount || 0),
-		aiDecisionAcceptedCount: Number(metrics.aiDecisionAcceptedCount || 0),
-		aiDecisionRejectedCount: Number(metrics.aiDecisionRejectedCount || 0),
-		reviewDecisionCount: Number(metrics.reviewDecisionCount || 0),
+		type: gateResult.type || "",
+		reason: gateResult.reason || "",
+		provenance: gateResult.provenance || {},
 	};
 }
 
@@ -306,5 +215,4 @@ module.exports = {
 	buildReviewPromptStatePatch,
 	buildStatusStatePatch,
 	buildSuccessfulActionStatePatch,
-	getDecisionProvenanceMetrics,
 };

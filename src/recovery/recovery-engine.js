@@ -1,101 +1,64 @@
-const { classifyFailure } = require("./failure-classifier");
-const { RetryPolicy } = require("./retry-policy");
-const {
-	backtrack,
-	reobserve,
-	requestUserConfirmation,
-	retrySameAction,
-} = require("./recovery-strategies");
+const { observePage } = require("../agent/observer");
+const { runVerifiedAction } = require("../execution/verified-action-runner");
 
 class RecoveryEngine {
 	constructor(options = {}) {
 		this.options = options;
-		this.retryPolicy = new RetryPolicy(options.retryPolicy);
 	}
 
 	async recover(context) {
 		const afterObservation = await reobserve(context.page, context.stateManager);
-		const failure = classifyFailure({
-			...context,
-			afterObservation,
-			runtimeState: context.stateManager.getState(),
+		const failure = buildFailure(context, afterObservation);
+		const retry = await runVerifiedAction({
+			page: context.page,
+			step: context.step,
+			beforeObservation: afterObservation,
+			interactionStability: this.options.interactionStability,
 		});
+		await reobserve(context.page, context.stateManager);
 
-		if (failure.type === "unexpected-navigation") {
-			return this.backtrack(context, failure);
-		}
-
-		if (this.retryPolicy.canRetry(failure)) {
-			return this.retry(context, failure);
-		}
-
-		if (isReplanCandidate(failure)) {
+		if (retry.verification.ok) {
+			context.stateManager.applySuccessfulAction(context.step, retry.verification);
 			return {
 				status: "recovered",
-				strategy: "reobserve-replan",
+				strategy: "retry-once",
 				failure,
-				message: "Fresh browser observation was synchronized; the next loop cycle will re-plan.",
-			};
-		}
-
-		return requestUserConfirmation(failure);
-	}
-
-	async retry(context, failure) {
-		const retryAttempt = this.retryPolicy.recordRetry(failure);
-		const actionResult = await retrySameAction(context.page, context.step, {
-			...this.options,
-			runtimeState: context.stateManager.getState(),
-			profile: context.profile,
-			goal: context.goal,
-			history: context.lifecycle,
-			stateManager: context.stateManager,
-		});
-		const observation = await reobserve(context.page, context.stateManager);
-
-		if (actionResult.verification.ok) {
-			context.stateManager.applySuccessfulAction(context.step, actionResult.verification);
-			return {
-				status: "recovered",
-				strategy: "retry",
-				failure,
-				retryAttempt,
-				actionResult,
-				observationFingerprint: observation.fingerprint,
+				retryAttempt: 1,
+				actionResult: retry,
 			};
 		}
 
 		return {
-			status: "not-recovered",
-			strategy: "retry",
+			status: "needs-user-confirmation",
+			strategy: "manual-intervention",
 			failure,
-			retryAttempt,
-			actionResult,
-		};
-	}
-
-	async backtrack(context, failure) {
-		const result = await backtrack(context.page, context.stateManager, this.options);
-		if (!result.ok) {
-			return requestUserConfirmation({
-				...failure,
-				backtrackError: result.error,
-			});
-		}
-
-		return {
-			status: "recovered",
-			strategy: "backtrack",
-			failure,
-			message: "Browser back navigation succeeded; the next loop cycle will re-plan.",
+			retryAttempt: 1,
+			actionResult: retry,
+			message: "Action failed after re-observe and one retry. User intervention is required.",
 		};
 	}
 }
 
-function isReplanCandidate(failure) {
-	return [
-		"dynamic-page-change",
-	].includes(failure.type);
+async function reobserve(page, stateManager) {
+	const observation = await observePage(page);
+	stateManager.applyObservation(observation);
+	return observation;
+}
+
+function buildFailure(context, afterObservation) {
+	const verification = context.actionResult && context.actionResult.verification || {};
+	return {
+		type: "action-verification-failed",
+		message: verification.reason || verification.error || "Action verification failed.",
+		retryKey: `${context.step.action}:${context.step.field.id}`,
+		step: {
+			action: context.step.action,
+			fieldId: context.step.field.id,
+			fieldLabel: context.step.field.label,
+		},
+		verification,
+		afterObservationFingerprint: afterObservation && afterObservation.fingerprint || "",
+	};
 }
 
 module.exports = {

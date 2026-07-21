@@ -52,9 +52,7 @@ async function assertResumesAfterReviewAnswer(browser) {
 		assert.equal(result.runtimeState.reviewAnswers[0].source, "explicit-user-review");
 		assert.equal(result.runtimeState.reviewAnswers[0].scope, "current-run");
 		assert.equal(result.runtimeState.completedFields.some((field) => field.source === "explicit-user-review"), true);
-		assert.equal(result.runtimeState.safetyMetrics.reviewAnswersProvided, 1);
-		assert.equal(result.runtimeState.safetyMetrics.reviewAnswersApplied, 1);
-		assert.equal(result.runtimeState.safetyMetrics.unsafeActionsExecuted, 0);
+		assert.equal(result.runtimeState.manualReview.length, 1);
 		assert.deepEqual(profile, originalProfile);
 	} finally {
 		await context.close();
@@ -77,7 +75,7 @@ async function assertMultiStepLoop(browser) {
 		assert.equal(await page.getByLabel("Country").inputValue(), "New Zealand");
 		assert.equal(result.runtimeState.currentExecutionStatus, "awaiting-human-confirmation");
 		assert.equal(result.runtimeState.completedFields.length, 2);
-		assert.equal(result.runtimeState.completedActions.length, 3);
+		assert.equal(result.runtimeState.recentActions.length, 3);
 		assert.equal(result.runtimeState.detectedFields.some((field) => field.label.text === "Country"), true);
 		assert.equal(JSON.stringify(result.runtimeState).includes("confidence"), false);
 		assert.equal(JSON.stringify(result.runtimeState).includes("reasoning"), false);
@@ -152,8 +150,8 @@ async function assertRecoveryRetriesFailedClick(browser) {
 
 		assert.equal(result.status, "awaiting-human-confirmation");
 		assert.equal(await page.getByLabel("Country").inputValue(), "New Zealand");
-		assert.equal(result.lifecycle.some((entry) => entry.recovery && entry.recovery.strategy === "retry"), true);
-		assert.equal(result.runtimeState.completedActions.some((action) => action.action === "click"), true);
+		assert.equal(result.lifecycle.some((entry) => entry.recovery && entry.recovery.strategy === "retry-once"), true);
+		assert.equal(result.runtimeState.recentActions.some((action) => action.action === "click"), true);
 	} finally {
 		await context.close();
 	}

@@ -31,7 +31,7 @@ function buildExecutionReport(result) {
 			status: entry.runtimeStateSnapshot.currentExecutionStatus,
 			url: entry.runtimeStateSnapshot.currentUrl,
 			completedFieldCount: entry.runtimeStateSnapshot.completedFields.length,
-			completedActionCount: entry.runtimeStateSnapshot.completedActions.length,
+			recentActionCount: (entry.runtimeStateSnapshot.recentActions || []).length,
 			remainingRequiredFieldCount: entry.runtimeStateSnapshot.remainingRequiredFields.length,
 			validationErrorCount: entry.runtimeStateSnapshot.validationErrors.length,
 			runtimeState: entry.runtimeStateSnapshot,
@@ -51,22 +51,20 @@ function buildExecutionReport(result) {
 		summary: {
 			executedActionCount: executedActions.length,
 			recoveryAttemptCount: recoveryAttempts.length,
-			retryCount: recoveryAttempts.filter((attempt) => attempt.strategy === "retry").length,
+			retryCount: recoveryAttempts.filter((attempt) => attempt.strategy === "retry-once").length,
 			verificationFailureCount: verificationResults.filter((verification) => !verification.ok).length,
 			runtimeSnapshotCount: runtimeTimeline.length,
 			completedFieldCount: result.runtimeState ? result.runtimeState.completedFields.length : 0,
 			uploadedFileCount: result.runtimeState ? result.runtimeState.uploadedFiles.length : 0,
 			reviewItemsResolved: countResolvedReviewItems(result),
 			remainingUnresolvedReviewItems: result.status === "needs-review" ? 1 : 0,
-			sensitiveAnswersProtected: getSafetyMetrics(result).unsafeActionsExecuted === 0,
+			sensitiveAnswersProtected: noUnsafeActionsExecuted(result),
 			finalSubmissionOccurred: false,
 			nextUserAction: getNextUserAction(result),
 		},
-		safetyMetrics: getSafetyMetrics(result),
-		decisionProvenanceMetrics: getDecisionProvenanceMetrics(result),
 		executedActions,
 		recoveryAttempts,
-		retries: recoveryAttempts.filter((attempt) => attempt.strategy === "retry"),
+		retries: recoveryAttempts.filter((attempt) => attempt.strategy === "retry-once"),
 		verificationResults,
 		runtimeTimeline,
 		executionTimeline: lifecycle.map((entry) => buildTimelineEntry(entry)),
@@ -138,45 +136,11 @@ function requiresHumanConfirmation(result) {
 	return result.status === "awaiting-human-confirmation" || result.status === "needs-user-confirmation";
 }
 
-function getSafetyMetrics(result = {}) {
-	const runtimeMetrics = result.runtimeState && result.runtimeState.safetyMetrics || {};
-	const safetyDecisions = collectSafetyDecisions(result.lifecycle || []);
-	const executedUnsafeActions = (result.lifecycle || []).filter((entry) => {
+function noUnsafeActionsExecuted(result = {}) {
+	return !(result.lifecycle || []).some((entry) => {
 		const safetyDecision = entry.actionResult && entry.actionResult.step && entry.actionResult.step.safetyDecision;
 		return safetyDecision && safetyDecision.allowed === false;
-	}).length;
-
-	return {
-		highRiskFieldsDetected: Math.max(Number(runtimeMetrics.highRiskFieldsDetected || 0), safetyDecisions.filter((decision) => decision.riskLevel === "high").length),
-		unsafeMatchesRejected: Math.max(Number(runtimeMetrics.unsafeMatchesRejected || 0), safetyDecisions.filter((decision) => decision.allowed === false && decision.reason === "sensitive-field-unsafe-profile-match").length),
-		incompatibleValuesRejected: Math.max(Number(runtimeMetrics.incompatibleValuesRejected || 0), safetyDecisions.filter((decision) => decision.allowed === false && decision.valueCompatibility && decision.valueCompatibility.allowed === false).length),
-		sensitiveReviewItemsCreated: Number(runtimeMetrics.sensitiveReviewItemsCreated || 0),
-		reviewAnswersProvided: Number(runtimeMetrics.reviewAnswersProvided || 0),
-		reviewAnswersApplied: Number(runtimeMetrics.reviewAnswersApplied || 0),
-		unsafeActionsExecuted: Number(runtimeMetrics.unsafeActionsExecuted || executedUnsafeActions),
-	};
-}
-
-function getDecisionProvenanceMetrics(result = {}) {
-	const runtimeMetrics = result.runtimeState && result.runtimeState.decisionProvenanceMetrics || {};
-	return {
-		aiSemanticDecisionCount: Number(runtimeMetrics.aiSemanticDecisionCount || 0),
-		deterministicSemanticDecisionCount: Number(runtimeMetrics.deterministicSemanticDecisionCount || 0),
-		safetyOverrideCount: Number(runtimeMetrics.safetyOverrideCount || 0),
-		policyOverrideCount: Number(runtimeMetrics.policyOverrideCount || 0),
-		aiDecisionAcceptedCount: Number(runtimeMetrics.aiDecisionAcceptedCount || 0),
-		aiDecisionRejectedCount: Number(runtimeMetrics.aiDecisionRejectedCount || 0),
-		reviewDecisionCount: Number(runtimeMetrics.reviewDecisionCount || 0),
-	};
-}
-
-function collectSafetyDecisions(lifecycle) {
-	const decisions = [];
-	for (const entry of lifecycle) {
-		const safetyDecision = extractTimelineSafetyDecision(entry);
-		if (safetyDecision) decisions.push(safetyDecision);
-	}
-	return decisions;
+	});
 }
 
 function countResolvedReviewItems(result = {}) {

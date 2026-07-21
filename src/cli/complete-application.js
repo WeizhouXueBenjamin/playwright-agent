@@ -3,12 +3,15 @@ const path = require("node:path");
 const readline = require("node:readline/promises");
 
 const { BrowserAIAgent } = require("../agent/browser-ai-agent");
+const { createRunLogDir, writeJsonArtifact } = require("../logging/artifact-store");
+
+const DEFAULT_PROFILE_PATH = path.join("data", "profile-full-stack.json");
 
 async function main() {
-	const [url, profilePath, resumePath = "", coverLetterPath = ""] = process.argv.slice(2);
+	const [url, profilePath = DEFAULT_PROFILE_PATH, resumePath = "", coverLetterPath = ""] = process.argv.slice(2);
 
-	if (!url || !profilePath) {
-		throw new Error("Usage: npm run complete-application -- <url> <profile.json> [resume] [cover-letter]");
+	if (!url) {
+		throw new Error("Usage: npm run apply -- <url> [profile.json] [resume] [cover-letter]");
 	}
 
 	const profile = JSON.parse(await fs.readFile(profilePath, "utf8"));
@@ -25,6 +28,18 @@ async function main() {
 		coverLetter: coverLetterPath,
 	});
 
+	const compactArtifact = buildCompactRunArtifact({
+		url,
+		profilePath,
+		resumePath,
+		coverLetterPath,
+		result,
+	});
+	const { runId, runDir } = await createRunLogDir(path.join("logs", "apply"));
+	compactArtifact.runId = runId;
+	const artifactPath = await writeJsonArtifact(runDir, "run-artifact.json", compactArtifact);
+
+	console.error(`Run artifact: ${artifactPath}`);
 	console.log(JSON.stringify(result, null, 2));
 }
 
@@ -66,6 +81,59 @@ function buildPromptText(reviewPrompt) {
 	lines.push(reviewPrompt.minimumInputRequired);
 	lines.push("The browser will stay open while this prompt waits. Enter /stop to stop.");
 	return lines.join("\n");
+}
+
+function buildCompactRunArtifact({ url, profilePath, resumePath, coverLetterPath, result }) {
+	const runtimeState = result.runtimeState || {};
+	const lifecycle = result.lifecycle || [];
+	const completedFields = Array.isArray(runtimeState.completedFields) ? runtimeState.completedFields : [];
+	const reviewItems = Array.isArray(runtimeState.reviewItems) ? runtimeState.reviewItems : [];
+	const decisionGateResults = Array.isArray(runtimeState.decisionGateResults) ? runtimeState.decisionGateResults : [];
+
+	return {
+		runId: "",
+		url,
+		status: result.status,
+		reason: result.reason || "",
+		profilePath,
+		configuredDocuments: {
+			resume: Boolean(resumePath),
+			coverLetter: Boolean(coverLetterPath),
+		},
+		filledFields: completedFields.map((field) => ({
+			fieldFingerprint: field.fieldFingerprint || field.fingerprint || "",
+			fieldIntent: field.fieldIntent || field.intent || "",
+			label: field.label || "",
+			controlType: field.controlType || "",
+			selectedAnswer: field.value,
+			profileSource: field.source || field.profilePath || "",
+			resolutionMethod: field.resolutionMethod || field.source || "runtime-action",
+			verificationOutcome: field.verification && field.verification.ok === false ? "failed" : "verified",
+			userIntervened: field.source === "explicit-user-review",
+		})),
+		generatedAnswers: [],
+		manualInterventions: reviewItems.map((item) => ({
+			fieldIntent: item.fieldIntent || "",
+			fieldFingerprint: item.fieldFingerprint || "",
+			question: item.question || item.fieldLabel && item.fieldLabel.text || "",
+			options: item.optionsSnapshot || item.options || [],
+			reason: item.safetyReason || item.reason || "",
+		})),
+		failures: lifecycle
+			.filter((entry) => entry.actionResult && entry.actionResult.verification && !entry.actionResult.verification.ok)
+			.map((entry) => ({
+				cycle: entry.cycle,
+				category: "verification-failed",
+				reason: entry.actionResult.verification.reason || "verification failed",
+			})),
+		safetyStops: decisionGateResults
+			.filter((gate) => gate.type === "review-item" || String(gate.reason || "").includes("safety"))
+			.map((gate) => ({
+				reason: gate.reason || "",
+				type: gate.type || "",
+			})),
+		submitted: false,
+	};
 }
 
 main().catch((error) => {

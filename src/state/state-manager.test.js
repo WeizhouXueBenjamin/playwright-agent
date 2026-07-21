@@ -66,7 +66,7 @@ manager.applySuccessfulAction(
 );
 
 state = manager.getState();
-assert.equal(state.completedActions.length, 1);
+assert.equal(state.recentActions.length, 1);
 assert.equal(state.completedFields.length, 1);
 
 const profileBeforeReview = { workAuthorization: "Open work visa valid until 2027" };
@@ -90,7 +90,6 @@ assert.equal(state.reviewAnswers[0].scope, "current-run");
 assert.equal(state.reviewAnswers[0].authorizedAt, "2026-07-20T00:00:00.000Z");
 assert.equal(state.reviewAnswers[0].safetyReasonResolved, "sensitive-field-value-format-mismatch");
 assert.deepEqual(profileBeforeReview, { workAuthorization: "Open work visa valid until 2027" });
-assert.equal(state.safetyMetrics.reviewAnswersProvided, 1);
 assert.equal(JSON.stringify(state).includes("confidence"), false);
 assert.equal(JSON.stringify(state).includes("reasoning"), false);
 
@@ -131,5 +130,5 @@ manager.applySuccessfulAction(
 );
 
 state = manager.getState();
-assert.equal(state.completedActions.length, 1);
+assert.equal(state.recentActions.length, 1);
 assert.equal(state.completedFields.length, 1);

@@ -1,5 +1,4 @@
 const { assertBenchmarkReportContract } = require("../contracts/benchmark-report");
-const { buildBenchmarkHealthScore } = require("../validation/health-score");
 
 function buildBenchmarkReport(input) {
 	const {
@@ -28,7 +27,7 @@ function buildBenchmarkReport(input) {
 		averageComponentConfidence: average(caseResults.map((result) => result.statistics.componentConfidence).filter((value) => value !== null)),
 		averageActionConfidence: average(caseResults.map((result) => result.statistics.actionConfidence).filter((value) => value !== null)),
 	};
-	const health = buildBenchmarkHealthScore(summary);
+	const health = buildLightweightBenchmarkHealth(summary);
 	summary.healthScore = health.score;
 	summary.healthGrade = health.grade;
 
@@ -120,6 +119,43 @@ function averageActionConfidence(executedActions) {
 		.map((action) => action.confidenceScore)
 		.filter((value) => typeof value === "number");
 	return average(values);
+}
+
+function buildLightweightBenchmarkHealth(summary) {
+	const successScore = clamp(summary.successRate);
+	const verificationScore = inversePenalty(summary.totalVerificationFailures, summary.totalActionCount);
+	const recoveryScore = inversePenalty(summary.totalRecoveryCount, summary.totalActionCount);
+	const unsupportedScore = inversePenalty(summary.totalUnsupportedComponents, summary.totalCases);
+	const score = Math.round(((successScore * 0.5) + (verificationScore * 0.25) + (recoveryScore * 0.15) + (unsupportedScore * 0.1)) * 100);
+
+	return {
+		mode: "lightweight-benchmark-health",
+		score,
+		grade: grade(score),
+		signals: {
+			successRate: summary.successRate,
+			verificationFailures: summary.totalVerificationFailures,
+			recoveryCount: summary.totalRecoveryCount,
+			unsupportedComponents: summary.totalUnsupportedComponents,
+		},
+	};
+}
+
+function inversePenalty(count, base) {
+	if (!base) return count ? 0 : 1;
+	return clamp(1 - (Number(count || 0) / base));
+}
+
+function clamp(value) {
+	return Math.max(0, Math.min(1, Number(value || 0)));
+}
+
+function grade(score) {
+	if (score >= 90) return "A";
+	if (score >= 75) return "B";
+	if (score >= 60) return "C";
+	if (score >= 40) return "D";
+	return "F";
 }
 
 module.exports = {
