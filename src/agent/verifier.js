@@ -15,6 +15,13 @@ async function verifyAction(page, step) {
 	}
 
 	if (step.action === "select-option") {
+		if (step.field.kind === "radio") {
+			const expected = String(step.actionValue);
+			const radio = page.getByLabel(expected, { exact: true });
+			const actual = await radio.first().isChecked();
+			return buildVerificationResult(actual === true, expected, actual ? expected : "", `radio-label:${expected}`);
+		}
+
 		const actual = await locator.inputValue();
 		const expected = String(step.actionValue);
 		const matched = actual === expected || await selectedOptionTextMatches(locator, expected);

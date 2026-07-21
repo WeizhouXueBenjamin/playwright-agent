@@ -9,6 +9,7 @@ function buildMetricsV2(context = {}) {
 	const pageProfile = componentValidation.pageProfile || null;
 	const applicableComponents = componentValidation.applicableComponents || null;
 	const decision = buildDecisionMetrics(execution);
+	const safety = buildSafetyMetrics(execution);
 	const observationLayer = buildObservationLayer(observation, validation);
 	const page = buildPageLayer(componentValidation);
 	const task = buildTaskLayer(execution, context.failureReport);
@@ -26,12 +27,14 @@ function buildMetricsV2(context = {}) {
 		layers: {
 			observation: observationLayer,
 			decision,
+			safety,
 			page,
 			task,
 			benchmark,
 		},
 		observation: observationLayer,
 		decision,
+		safety,
 		page,
 		task,
 		benchmark,
@@ -83,6 +86,19 @@ function buildDecisionMetrics(execution) {
 			verificationInconsistentCount,
 			recoveryAttemptCount: execution.summary ? execution.summary.recoveryAttemptCount : 0,
 		}),
+	};
+}
+
+function buildSafetyMetrics(execution) {
+	const metrics = execution.safetyMetrics || {};
+	return {
+		highRiskFieldsDetected: Number(metrics.highRiskFieldsDetected || 0),
+		unsafeMatchesRejected: Number(metrics.unsafeMatchesRejected || 0),
+		incompatibleValuesRejected: Number(metrics.incompatibleValuesRejected || 0),
+		sensitiveReviewItemsCreated: Number(metrics.sensitiveReviewItemsCreated || 0),
+		reviewAnswersProvided: Number(metrics.reviewAnswersProvided || 0),
+		reviewAnswersApplied: Number(metrics.reviewAnswersApplied || 0),
+		unsafeActionsExecuted: Number(metrics.unsafeActionsExecuted || 0),
 	};
 }
 
@@ -145,7 +161,7 @@ function buildTaskOutcome(execution, failureReport = {}) {
 
 	if (status === "needs-review") {
 		const blocker = inferBlockerFromFailures(failures, verificationResults, reason);
-		return outcome("needs-review", reason, blocker.layer, blocker.capability, "safe-stop");
+		return outcome("needs-review-resumable", reason, blocker.layer, blocker.capability, "safe-stop");
 	}
 
 	if (status === "recovery-failed" || status === "verification-failed" || status === "needs-user-confirmation") {

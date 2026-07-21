@@ -1,3 +1,5 @@
+const { buildFieldFingerprint } = require("../review/review-resolution");
+
 const FIELD_INTENTS = {
 	SALARY_EXPECTATION: "salary-expectation",
 	CURRENT_SALARY: "current-salary",
@@ -111,8 +113,12 @@ const ALLOWED_PROFILE_KEYS_BY_INTENT = {
 
 function classifyFieldIntent(field) {
 	const evidence = collectFieldEvidence(field);
-	const searchableText = evidence.map((item) => item.value).join(" ").toLowerCase();
-	const matchedRule = INTENT_RULES.find((rule) => rule.patterns.some((pattern) => pattern.test(searchableText)));
+	const primaryEvidence = collectPrimaryIntentEvidence(field, evidence);
+	const primaryText = primaryEvidence.map((item) => item.value).join(" ").toLowerCase();
+	const primaryMatchedRule = INTENT_RULES.find((rule) => rule.patterns.some((pattern) => pattern.test(primaryText)));
+	const shouldUsePrimaryOnly = primaryEvidence.length && field.label && field.label.text && Number(field.label.confidence || 0) >= 0.9;
+	const searchableText = shouldUsePrimaryOnly ? primaryText : evidence.map((item) => item.value).join(" ").toLowerCase();
+	const matchedRule = primaryMatchedRule || INTENT_RULES.find((rule) => rule.patterns.some((pattern) => pattern.test(searchableText)));
 	const fieldIntent = matchedRule ? matchedRule.intent : FIELD_INTENTS.LOW_RISK;
 
 	return {
@@ -124,9 +130,17 @@ function classifyFieldIntent(field) {
 	};
 }
 
+function collectPrimaryIntentEvidence(field, evidence) {
+	const primarySources = new Set(["label", "aria-label", "aria-labelledby", "placeholder", "visible-text", "option", "fieldset-legend"]);
+	return evidence.filter((item) => primarySources.has(item.source));
+}
+
 function evaluateFieldAnswerSafety(field, matchedProfileProperty) {
 	const classification = classifyFieldIntent(field);
 	const matchedProperty = matchedProfileProperty && matchedProfileProperty.path || null;
+	const explicitReviewAnswer = matchedProfileProperty && matchedProfileProperty.source === "explicit-user-review"
+		? matchedProfileProperty.reviewAnswer || null
+		: null;
 
 	if (classification.riskLevel !== "high") {
 		return buildDecision({
@@ -148,7 +162,7 @@ function evaluateFieldAnswerSafety(field, matchedProfileProperty) {
 		});
 	}
 
-	if (!isProfilePropertyAllowed(classification.fieldIntent, matchedProfileProperty.path)) {
+	if (!explicitReviewAnswer && !isProfilePropertyAllowed(classification.fieldIntent, matchedProfileProperty.path)) {
 		return buildDecision({
 			...classification,
 			allowed: false,
@@ -160,7 +174,9 @@ function evaluateFieldAnswerSafety(field, matchedProfileProperty) {
 
 	const valueDecision = validateSensitiveFieldValue({
 		intent: classification.fieldIntent,
-		value: matchedProfileProperty.value,
+		value: explicitReviewAnswer
+			? getReviewAnswerSafetyValue(classification.fieldIntent, explicitReviewAnswer, field)
+			: matchedProfileProperty.value,
 		fieldType: field.kind,
 		options: field.options || [],
 		constraints: field.constraints || {},
@@ -181,10 +197,26 @@ function evaluateFieldAnswerSafety(field, matchedProfileProperty) {
 		...classification,
 		allowed: true,
 		matchedProperty,
-		reason: "explicit-profile-value-approved",
+		reason: explicitReviewAnswer ? "explicit-user-review-value-approved" : "explicit-profile-value-approved",
 		requiresReview: false,
 		valueCompatibility: valueDecision,
 	});
+}
+
+function getReviewAnswerSafetyValue(fieldIntent, reviewAnswer, field) {
+	if (fieldIntent !== FIELD_INTENTS.LEGAL_DECLARATION && fieldIntent !== FIELD_INTENTS.PRIVACY_CONSENT) {
+		return reviewAnswer.answer;
+	}
+
+	const normalized = normalizeComparableText(reviewAnswer.answer);
+	const authorized = reviewAnswer.answer === true || ["yes", "true", "y", "agree", "i agree"].includes(normalized);
+	return {
+		authorizationType: "consent",
+		authorized,
+		consentScope: fieldIntent === FIELD_INTENTS.PRIVACY_CONSENT ? "privacy-policy" : "legal-declaration",
+		statementFingerprint: reviewAnswer.statementFingerprint || getStatementFingerprint(field, field.constraints || {}),
+		authorizedAt: reviewAnswer.authorizedAt,
+	};
 }
 
 function validateSensitiveFieldValue(input = {}) {
@@ -209,6 +241,10 @@ function validateSensitiveFieldValue(input = {}) {
 	}
 
 	if (requiresBooleanAnswer({ intent, fieldType, options, fieldText }) && !isBooleanCompatible(value)) {
+		return buildValueDecision(false, "sensitive-field-value-format-mismatch");
+	}
+
+	if (intent === FIELD_INTENTS.WORK_AUTHORIZATION && !isBooleanQuestion(fieldText, options) && !isWorkEligibilityStatusCompatible(value)) {
 		return buildValueDecision(false, "sensitive-field-value-format-mismatch");
 	}
 
@@ -412,12 +448,25 @@ function normalizeComparableText(value) {
 }
 
 function requiresBooleanAnswer(input) {
-	if (input.intent === FIELD_INTENTS.WORK_AUTHORIZATION || input.intent === FIELD_INTENTS.SPONSORSHIP_REQUIRED) return true;
+	if (input.intent === FIELD_INTENTS.SPONSORSHIP_REQUIRED) return true;
+	if (input.intent === FIELD_INTENTS.WORK_AUTHORIZATION) return isBooleanQuestion(input.fieldText, input.options);
 	if (input.fieldType === "checkbox") return true;
 
 	const optionTexts = (input.options || []).map((option) => normalizeComparableText(option.label || option.value)).filter(Boolean);
 	if (!optionTexts.length) return false;
 	return optionTexts.every((text) => ["yes", "no", "true", "false", "y", "n"].includes(text));
+}
+
+function isBooleanQuestion(fieldText, options) {
+	const optionTexts = (options || []).map((option) => normalizeComparableText(option.label || option.value)).filter(Boolean);
+	if (optionTexts.length) return optionTexts.every((text) => ["yes", "no", "true", "false", "y", "n"].includes(text));
+	return /\b(legally\s+authorized|authorized\s+to\s+work|eligible\s+to\s+work|right\s+to\s+work)\b/.test(fieldText);
+}
+
+function isWorkEligibilityStatusCompatible(value) {
+	const normalized = normalizeComparableText(value);
+	if (isBooleanCompatible(value)) return true;
+	return /\b(citizen|permanent\s+resident|resident\s+visa|work\s+visa|open\s+work\s+visa|work\s+permit|visa)\b/.test(normalized);
 }
 
 function isBooleanCompatible(value) {
@@ -462,7 +511,12 @@ function getStatementFingerprint(field, constraints) {
 		|| field.statementFingerprint
 		|| field.consentStatementFingerprint
 		|| field.evidence && field.evidence.statementFingerprint
+		|| buildFallbackStatementFingerprint(field)
 		|| "";
+}
+
+function buildFallbackStatementFingerprint(field = {}) {
+	return buildFieldFingerprint(field);
 }
 
 module.exports = {

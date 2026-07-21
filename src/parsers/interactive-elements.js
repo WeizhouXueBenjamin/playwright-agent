@@ -283,6 +283,8 @@ async function captureInteractiveElements(page) {
 		}
 
 		function isElementVisible(element) {
+			if (element.getAttribute("aria-hidden") === "true" || element.closest("[aria-hidden='true']")) return false;
+			if (element.getAttribute("type") === "hidden") return false;
 			const style = window.getComputedStyle(element);
 			const rect = element.getBoundingClientRect();
 			return style.visibility !== "hidden" && style.display !== "none" && rect.width > 0 && rect.height > 0;

@@ -43,8 +43,11 @@ function buildExecutionReport(result) {
 		objective: "Validate safe browser execution without irreversible actions.",
 		status: result.status,
 		reason: result.reason,
+		productSuccessOutcome: getProductSuccessOutcome(result),
 		humanConfirmationRequired: requiresHumanConfirmation(result),
 		stoppedBeforeIrreversibleAction: result.status === "awaiting-human-confirmation",
+		reviewPrompt: getReviewPrompt(result),
+		reviewPromptText: result.reviewPromptText || "",
 		summary: {
 			executedActionCount: executedActions.length,
 			recoveryAttemptCount: recoveryAttempts.length,
@@ -53,7 +56,13 @@ function buildExecutionReport(result) {
 			runtimeSnapshotCount: runtimeTimeline.length,
 			completedFieldCount: result.runtimeState ? result.runtimeState.completedFields.length : 0,
 			uploadedFileCount: result.runtimeState ? result.runtimeState.uploadedFiles.length : 0,
+			reviewItemsResolved: countResolvedReviewItems(result),
+			remainingUnresolvedReviewItems: result.status === "needs-review" ? 1 : 0,
+			sensitiveAnswersProtected: getSafetyMetrics(result).unsafeActionsExecuted === 0,
+			finalSubmissionOccurred: false,
+			nextUserAction: getNextUserAction(result),
 		},
+		safetyMetrics: getSafetyMetrics(result),
 		executedActions,
 		recoveryAttempts,
 		retries: recoveryAttempts.filter((attempt) => attempt.strategy === "retry"),
@@ -103,6 +112,12 @@ function buildTimelineEntry(entry) {
 	if (entry.recovery) {
 		timelineEntry.recovery = entry.recovery;
 	}
+	if (entry.reviewPrompt) {
+		timelineEntry.reviewPrompt = entry.reviewPrompt;
+	}
+	if (entry.reviewAnswer) {
+		timelineEntry.reviewAnswer = entry.reviewAnswer;
+	}
 
 	return timelineEntry;
 }
@@ -116,6 +131,58 @@ function extractTimelineSafetyDecision(entry) {
 
 function requiresHumanConfirmation(result) {
 	return result.status === "awaiting-human-confirmation" || result.status === "needs-user-confirmation";
+}
+
+function getSafetyMetrics(result = {}) {
+	const runtimeMetrics = result.runtimeState && result.runtimeState.safetyMetrics || {};
+	const safetyDecisions = collectSafetyDecisions(result.lifecycle || []);
+	const executedUnsafeActions = (result.lifecycle || []).filter((entry) => {
+		const safetyDecision = entry.actionResult && entry.actionResult.step && entry.actionResult.step.safetyDecision;
+		return safetyDecision && safetyDecision.allowed === false;
+	}).length;
+
+	return {
+		highRiskFieldsDetected: Math.max(Number(runtimeMetrics.highRiskFieldsDetected || 0), safetyDecisions.filter((decision) => decision.riskLevel === "high").length),
+		unsafeMatchesRejected: Math.max(Number(runtimeMetrics.unsafeMatchesRejected || 0), safetyDecisions.filter((decision) => decision.allowed === false && decision.reason === "sensitive-field-unsafe-profile-match").length),
+		incompatibleValuesRejected: Math.max(Number(runtimeMetrics.incompatibleValuesRejected || 0), safetyDecisions.filter((decision) => decision.allowed === false && decision.valueCompatibility && decision.valueCompatibility.allowed === false).length),
+		sensitiveReviewItemsCreated: Number(runtimeMetrics.sensitiveReviewItemsCreated || 0),
+		reviewAnswersProvided: Number(runtimeMetrics.reviewAnswersProvided || 0),
+		reviewAnswersApplied: Number(runtimeMetrics.reviewAnswersApplied || 0),
+		unsafeActionsExecuted: Number(runtimeMetrics.unsafeActionsExecuted || executedUnsafeActions),
+	};
+}
+
+function collectSafetyDecisions(lifecycle) {
+	const decisions = [];
+	for (const entry of lifecycle) {
+		const safetyDecision = extractTimelineSafetyDecision(entry);
+		if (safetyDecision) decisions.push(safetyDecision);
+	}
+	return decisions;
+}
+
+function countResolvedReviewItems(result = {}) {
+	return (result.lifecycle || []).filter((entry) => entry.reviewAnswer).length;
+}
+
+function getProductSuccessOutcome(result = {}) {
+	if (result.status === "needs-review") return "needs-review-resumable";
+	if (result.status === "awaiting-human-confirmation") return "ready-for-review";
+	if (result.status === "completed") return "partial-success";
+	if (result.status === "needs-user-confirmation" || result.status === "recovery-failed") return "protected-stop";
+	return "failure";
+}
+
+function getNextUserAction(result = {}) {
+	const reviewPrompt = getReviewPrompt(result);
+	if (result.status === "needs-review" && reviewPrompt) return reviewPrompt.minimumInputRequired;
+	if (result.status === "awaiting-human-confirmation") return "Review the completed application and submit manually if appropriate.";
+	if (result.status === "needs-user-confirmation") return "Review the page and decide whether to continue manually.";
+	return "Review the run result.";
+}
+
+function getReviewPrompt(result = {}) {
+	return result.reviewPrompt || result.runtimeState && result.runtimeState.pendingReviewPrompt || null;
 }
 
 module.exports = {

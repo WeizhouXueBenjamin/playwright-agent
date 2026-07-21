@@ -49,6 +49,15 @@ const metrics = buildMetricsV2({
 			completedFieldCount: 0,
 			uploadedFileCount: 0,
 		},
+		safetyMetrics: {
+			highRiskFieldsDetected: 2,
+			unsafeMatchesRejected: 1,
+			incompatibleValuesRejected: 1,
+			sensitiveReviewItemsCreated: 1,
+			reviewAnswersProvided: 1,
+			reviewAnswersApplied: 1,
+			unsafeActionsExecuted: 0,
+		},
 		verificationResults: [
 			{ ok: true },
 		],
@@ -90,7 +99,11 @@ assert.equal(metrics.task.efficiency.repeatedFieldAttempts, 0);
 assert.equal(metrics.task.efficiency.skippedVerifiedFields, 0);
 assert.equal(metrics.task.efficiency.averageActionsPerCompletedField, 0);
 assert.equal(metrics.task.efficiency.redundantActionRatio, 0);
-assert.equal(metrics.task.outcome.status, "needs-review");
+assert.equal(metrics.task.outcome.status, "needs-review-resumable");
+assert.equal(metrics.safety.unsafeMatchesRejected, 1);
+assert.equal(metrics.safety.incompatibleValuesRejected, 1);
+assert.equal(metrics.safety.reviewAnswersApplied, 1);
+assert.equal(metrics.safety.unsafeActionsExecuted, 0);
 
 const health = buildLayeredHealthV2(metrics);
 assert.equal(health.mode, "layered-health-v2");
@@ -174,7 +187,7 @@ const needsReviewOutcomeMetrics = buildMetricsV2({
 	},
 });
 
-assert.equal(needsReviewOutcomeMetrics.task.outcome.status, "needs-review");
+assert.equal(needsReviewOutcomeMetrics.task.outcome.status, "needs-review-resumable");
 assert.equal(needsReviewOutcomeMetrics.task.outcome.reason, "required-field-needs-review");
 assert.equal(needsReviewOutcomeMetrics.task.outcome.blockerLayer, "Task");
 assert.equal(needsReviewOutcomeMetrics.task.outcome.blockerCapability, "Field Identification");

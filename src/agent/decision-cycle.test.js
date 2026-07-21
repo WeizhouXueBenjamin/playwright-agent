@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 
 const { runDecisionCycle } = require("./decision-cycle");
+const { buildFieldFingerprint, buildReviewAnswer } = require("../review/review-resolution");
 
 const observation = {
 	schemaVersion: 1,
@@ -237,3 +238,53 @@ const sensitiveReviewCycle = runDecisionCycle({
 assert.equal(sensitiveReviewCycle.plannerDecision.type, "needs-review");
 assert.equal(sensitiveReviewCycle.plannerDecision.details.safetyDecision.fieldIntent, "salary-expectation");
 assert.equal(sensitiveReviewCycle.decision.safetyDecision.reason, "salary-expectation-requires-explicit-answer");
+
+const workAuthorizationField = {
+	id: "work-auth",
+	kind: "radio",
+	role: "radio",
+	tagName: "input",
+	inputType: "radio",
+	label: { text: "Are you legally authorized to work in New Zealand?", source: "label", confidence: 0.98 },
+	labelCandidates: [{ text: "Are you legally authorized to work in New Zealand?", source: "label", confidence: 0.98 }],
+	placeholder: "",
+	required: true,
+	disabled: false,
+	readonly: false,
+	state: { checked: false },
+	options: [{ label: "Yes" }, { label: "No" }],
+	validation: { valid: true, message: "" },
+};
+const reviewResolvedCycle = runDecisionCycle({
+	goal: "Apply to role",
+	observation: {
+		...observation,
+		semanticPage: {
+			...observation.semanticPage,
+			interactiveElements: [workAuthorizationField],
+		},
+	},
+	profile: { workAuthorization: "Open work visa valid until 2027" },
+	runtimeState: {
+		...runtimeState,
+		reviewAnswers: [
+			buildReviewAnswer({
+				fieldIntent: "work-authorization",
+				fieldFingerprint: buildFieldFingerprint(workAuthorizationField),
+				fieldId: "work-auth",
+				fieldLabel: { text: "Are you legally authorized to work in New Zealand?", source: "label" },
+				answer: "Yes",
+				answerType: "selection",
+				safetyReasonResolved: "sensitive-field-value-format-mismatch",
+				optionsSnapshot: [{ label: "Yes" }, { label: "No" }],
+			}, new Date("2026-07-20T00:00:00.000Z")),
+		],
+		remainingRequiredFields: [
+			{ id: "work-auth", label: { text: "Are you legally authorized to work in New Zealand?", source: "label" } },
+		],
+	},
+	options: {},
+});
+assert.equal(reviewResolvedCycle.plannerDecision.type, "action");
+assert.equal(reviewResolvedCycle.plannerDecision.step.profileProperty.source, "explicit-user-review");
+assert.equal(reviewResolvedCycle.terminalState.reached, false);

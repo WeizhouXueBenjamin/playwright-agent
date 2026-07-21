@@ -39,6 +39,8 @@ async function main() {
 	const runtimeState = JSON.parse(await fs.readFile(path.join(result.runDir, "runtime-state.json"), "utf8"));
 	assert.equal(runtimeState.completedActions.length, 0);
 	assert.equal(runtimeState.currentExecutionStatus, "observation-completed");
+	assert.equal(runtimeState.detectedFields.some((field) => field.id === "internal-location-required"), false);
+	assert.equal(runtimeState.detectedFields.some((field) => field.label.text === "Location (City)*"), true);
 }
 
 function createBenchmarkPageUrl() {
@@ -49,6 +51,9 @@ function createBenchmarkPageUrl() {
 		"<form>",
 		"<label for=\"first\">First name</label>",
 		"<input id=\"first\" name=\"firstName\" required>",
+		"<label for=\"location\">Location (City)*</label>",
+		"<input id=\"location\" role=\"combobox\" required>",
+		"<input id=\"internal-location-required\" required aria-hidden=\"true\" tabindex=\"-1\" style=\"width:1px;height:1px;\">",
 		"<button type=\"button\" onclick=\"document.body.dataset.clicked = 'clicked'\">Do not click</button>",
 		"</form>",
 		"<script>",

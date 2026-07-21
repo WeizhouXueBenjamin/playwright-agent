@@ -1,6 +1,19 @@
 const { resolveFieldLocator } = require("./locator");
 
 async function selectOption(page, step) {
+	if (step.field.kind === "radio") {
+		const value = String(step.actionValue);
+		const radio = page.getByLabel(value, { exact: true });
+		if (await radio.count() < 1) {
+			throw new Error(`No radio option matched "${value}".`);
+		}
+		await radio.first().check();
+		return {
+			action: "select-option",
+			locatorStrategy: `radio-label:${value}`,
+		};
+	}
+
 	const { locator, strategy } = await resolveFieldLocator(page, step.field);
 	const value = String(step.actionValue);
 	const option = await findMatchingOption(locator, value);

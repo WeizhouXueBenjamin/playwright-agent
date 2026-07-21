@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 
 const { classifyFieldIntent, evaluateFieldAnswerSafety, validateSensitiveFieldValue } = require("./field-answer-safety");
 const { matchFieldsToProfile } = require("./field-matching");
+const { buildFieldFingerprint, buildReviewAnswer } = require("../review/review-resolution");
 
 const semanticPage = {
 	interactiveElements: [
@@ -32,7 +33,7 @@ assert.deepEqual(
 	[
 		{ field: "First name", property: "firstName", confidence: 98, intent: "low-risk" },
 		{ field: "I agree", property: "agreement", confidence: 90, intent: "low-risk" },
-		{ field: "Country", property: "country", confidence: 94, intent: "low-risk" },
+		{ field: "Country", property: "country", confidence: 100, intent: "low-risk" },
 	],
 );
 
@@ -194,6 +195,59 @@ const booleanMismatchDecision = evaluateFieldAnswerSafety(
 assert.equal(booleanMismatchDecision.allowed, false);
 assert.equal(booleanMismatchDecision.reason, "sensitive-field-value-format-mismatch");
 
+const workEligibilityStatusDecision = evaluateFieldAnswerSafety(
+	createField("work-eligibility", "text-input", "Work Eligibility*", "label", 0.98),
+	{ path: "workAuthorization", value: "Citizen or Permanent Resident Visa", valueType: "string", valuePresent: true },
+);
+assert.equal(workEligibilityStatusDecision.allowed, true);
+assert.equal(workEligibilityStatusDecision.reason, "explicit-profile-value-approved");
+
+const deterministicWorkEligibilityMatches = matchFieldsToProfile({
+	interactiveElements: [
+		createField("work-eligibility", "text-input", "Work Eligibility*", "label", 0.98),
+	],
+}, {
+	workAuthorization: "New Zealand Permanent Resident visa",
+}, { threshold: 1 });
+assert.equal(deterministicWorkEligibilityMatches[0].matchedProfileProperty.path, "workAuthorization");
+assert.equal(deterministicWorkEligibilityMatches[0].matchedProfileProperty.value, "Citizen or Permanent Resident Visa");
+assert.equal(deterministicWorkEligibilityMatches[0].matchedProfileProperty.source, "deterministic-work-eligibility");
+assert.equal(deterministicWorkEligibilityMatches[0].safetyDecision.allowed, true);
+
+const booleanWorkEligibilityMatches = matchFieldsToProfile({
+	interactiveElements: [
+		createField("work-auth", "radio", "Are you legally authorized to work in New Zealand?", "label", 0.98, "radio"),
+	],
+}, {
+	workAuthorization: "New Zealand Permanent Resident visa",
+}, { threshold: 1 });
+assert.equal(booleanWorkEligibilityMatches[0].matchedProfileProperty.value, "Yes");
+assert.equal(booleanWorkEligibilityMatches[0].safetyDecision.allowed, true);
+
+const structuredLocationMatches = matchFieldsToProfile({
+	interactiveElements: [
+		createField("location-city", "text-input", "Location (City)*", "label", 0.98),
+		createField("country", "text-input", "Country*", "label", 0.98),
+		createField("city-country", "text-input", "Current location", "label", 0.98),
+		createField("resume", "file-upload", "Resume", "label", 0.98, "file"),
+	],
+}, {
+	location: {
+		city: "Wellington",
+		country: "New Zealand",
+		formatted: "Wellington, New Zealand",
+	},
+	city: "Auckland",
+	country: "Australia",
+}, { threshold: 1 });
+assert.equal(structuredLocationMatches[0].matchedProfileProperty.path, "location.city");
+assert.equal(structuredLocationMatches[0].matchedProfileProperty.value, "Wellington");
+assert.equal(structuredLocationMatches[1].matchedProfileProperty.path, "location.country");
+assert.equal(structuredLocationMatches[1].matchedProfileProperty.value, "New Zealand");
+assert.equal(structuredLocationMatches[2].matchedProfileProperty.path, "location.formatted");
+assert.equal(structuredLocationMatches[2].matchedProfileProperty.value, "Wellington, New Zealand");
+assert.notEqual(structuredLocationMatches[3].matchedProfileProperty && structuredLocationMatches[3].matchedProfileProperty.source, "structured-location");
+
 const unsafeWorkAuthorizationMatches = matchFieldsToProfile({
 	interactiveElements: [
 		createField("work-auth", "radio", "Are you legally authorized to work in this country?", "label", 0.98, "radio"),
@@ -291,6 +345,120 @@ const unsafeReferralDecision = evaluateFieldAnswerSafety(
 );
 assert.equal(unsafeReferralDecision.allowed, false);
 assert.equal(unsafeReferralDecision.reason, "sensitive-field-unsafe-profile-match");
+
+const referralCheckboxMatches = matchFieldsToProfile({
+	interactiveElements: [
+		createField("ref-1", "checkbox", "Re-Leased employee referral", "label", 0.98, "checkbox"),
+		createField("ref-2", "checkbox", "Industry referral", "label", 0.98, "checkbox"),
+		createField("ref-3", "checkbox", "Seek", "label", 0.98, "checkbox"),
+	],
+}, {}, { threshold: 1 });
+assert.equal(referralCheckboxMatches.length, 1);
+assert.equal(referralCheckboxMatches[0].field.label.text, "Re-Leased employee referral");
+assert.equal(referralCheckboxMatches[0].matchedProfileProperty.path, "referralSource");
+assert.equal(referralCheckboxMatches[0].matchedProfileProperty.source, "default-first-referral-source-option");
+assert.equal(referralCheckboxMatches[0].matchedProfileProperty.value, true);
+assert.equal(referralCheckboxMatches[0].safetyDecision.allowed, true);
+
+const workAuthorizationField = {
+	...createField("work-auth", "radio", "Are you legally authorized to work in New Zealand?", "label", 0.98),
+	required: true,
+	options: [{ label: "Yes" }, { label: "No" }],
+};
+const reviewAnswer = buildReviewAnswer({
+	fieldIntent: "work-authorization",
+	fieldFingerprint: buildFieldFingerprint(workAuthorizationField),
+	fieldId: "work-auth",
+	fieldLabel: { text: "Are you legally authorized to work in New Zealand?", source: "label" },
+	answer: "Yes",
+	answerType: "selection",
+	safetyReasonResolved: "sensitive-field-value-format-mismatch",
+	optionsSnapshot: [{ label: "Yes" }, { label: "No" }],
+}, new Date("2026-07-20T00:00:00.000Z"));
+const reviewResolvedMatches = matchFieldsToProfile({
+	interactiveElements: [workAuthorizationField],
+}, {
+	workAuthorization: "Open work visa valid until 2027",
+}, {
+	threshold: 1,
+	runtimeState: { reviewAnswers: [reviewAnswer] },
+});
+assert.equal(reviewResolvedMatches[0].matchedProfileProperty.source, "explicit-user-review");
+assert.equal(reviewResolvedMatches[0].matchedProfileProperty.value, "Yes");
+assert.equal(reviewResolvedMatches[0].safetyDecision.allowed, true);
+assert.equal(reviewResolvedMatches[0].safetyDecision.reason, "explicit-user-review-value-approved");
+
+const differentFieldMatches = matchFieldsToProfile({
+	interactiveElements: [{
+		...workAuthorizationField,
+		id: "work-auth-other",
+		label: { text: "Are you authorized to work in Australia?", source: "label", confidence: 0.98 },
+		labelCandidates: [{ text: "Are you authorized to work in Australia?", source: "label", confidence: 0.98 }],
+	}],
+}, {}, {
+	threshold: 1,
+	runtimeState: { reviewAnswers: [reviewAnswer] },
+});
+assert.equal(differentFieldMatches[0].matchedProfileProperty, null);
+
+const incompatibleReviewAnswer = buildReviewAnswer({
+	fieldIntent: "work-authorization",
+	fieldFingerprint: buildFieldFingerprint(workAuthorizationField),
+	fieldId: "work-auth",
+	fieldLabel: { text: "Are you legally authorized to work in New Zealand?", source: "label" },
+	answer: "Maybe",
+	answerType: "selection",
+	safetyReasonResolved: "sensitive-field-value-format-mismatch",
+	optionsSnapshot: [{ label: "Yes" }, { label: "No" }],
+}, new Date("2026-07-20T00:00:00.000Z"));
+const incompatibleReviewMatches = matchFieldsToProfile({
+	interactiveElements: [workAuthorizationField],
+}, {}, {
+	threshold: 1,
+	runtimeState: { reviewAnswers: [incompatibleReviewAnswer] },
+});
+assert.equal(incompatibleReviewMatches[0].matchedProfileProperty, null);
+assert.equal(incompatibleReviewMatches[0].safetyDecision.reason, "sensitive-field-option-not-available");
+
+const privacyField = createField("privacy", "checkbox", "I agree to the privacy policy", "label", 0.98, "checkbox", {
+	statementFingerprint: "privacy-current",
+});
+const staleConsentAnswer = buildReviewAnswer({
+	fieldIntent: "privacy-consent",
+	fieldFingerprint: buildFieldFingerprint(privacyField),
+	fieldId: "privacy",
+	fieldLabel: { text: "I agree to the privacy policy", source: "label" },
+	answer: "Yes",
+	answerType: "selection",
+	safetyReasonResolved: "legal-consent-requires-user-review",
+	statementFingerprint: "privacy-old",
+}, new Date("2026-07-20T00:00:00.000Z"));
+const staleConsentMatches = matchFieldsToProfile({
+	interactiveElements: [privacyField],
+}, {}, {
+	threshold: 1,
+	runtimeState: { reviewAnswers: [staleConsentAnswer] },
+});
+assert.equal(staleConsentMatches[0].matchedProfileProperty, null);
+
+const privacyFieldWithoutStatementFingerprint = createField("privacy-current-field", "text-input", "Re-Leased: Recruitment Privacy Policy*", "label", 0.98);
+const currentConsentAnswer = buildReviewAnswer({
+	fieldIntent: "privacy-consent",
+	fieldFingerprint: buildFieldFingerprint(privacyFieldWithoutStatementFingerprint),
+	fieldId: "privacy-current-field",
+	fieldLabel: { text: "Re-Leased: Recruitment Privacy Policy*", source: "label" },
+	answer: "Yes",
+	answerType: "selection",
+	safetyReasonResolved: "legal-consent-requires-user-review",
+}, new Date("2026-07-20T00:00:00.000Z"));
+const currentConsentMatches = matchFieldsToProfile({
+	interactiveElements: [privacyFieldWithoutStatementFingerprint],
+}, {}, {
+	threshold: 1,
+	runtimeState: { reviewAnswers: [currentConsentAnswer] },
+});
+assert.equal(currentConsentMatches[0].matchedProfileProperty.source, "explicit-user-review");
+assert.equal(currentConsentMatches[0].safetyDecision.allowed, true);
 
 function createField(id, kind, label, source, confidence, inputType = "", constraints = {}) {
 	return {

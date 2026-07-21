@@ -9,7 +9,10 @@ function determineNextAction(semanticPage, profile, options = {}) {
 	const adaptiveDecision = buildAdaptiveDecision(adaptiveReasoning);
 	if (adaptiveDecision) return adaptiveDecision;
 
-	const matches = matchFieldsToProfile(semanticPage, profile, options.matching);
+	const matches = matchFieldsToProfile(semanticPage, profile, {
+		...(options.matching || {}),
+		runtimeState: options.runtimeState || {},
+	});
 	const plan = buildExecutionPlan(matches, options.planning);
 	const pendingStep = plan.steps.find((step) => !isStepAlreadySatisfied(step, options.runtimeState));
 

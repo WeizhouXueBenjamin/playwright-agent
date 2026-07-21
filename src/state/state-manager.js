@@ -2,6 +2,8 @@ const { createInitialRuntimeState } = require("./runtime-state");
 const { assertRuntimeStateContract, assertRuntimeStatePatchContract } = require("../contracts/runtime-state");
 const {
 	buildObservationStatePatch,
+	buildReviewAnswerStatePatch,
+	buildReviewPromptStatePatch,
 	buildSuccessfulActionStatePatch,
 	buildStatusStatePatch,
 } = require("./state-update-pipeline");
@@ -20,6 +22,16 @@ class StateManager {
 		if (!verification || !verification.ok) return this.getState();
 
 		this.applyPatch(buildSuccessfulActionStatePatch(this.state, step, verification, date));
+		return this.getState();
+	}
+
+	recordReviewPrompt(reviewPrompt, date = new Date()) {
+		this.applyPatch(buildReviewPromptStatePatch(this.state, reviewPrompt, date));
+		return this.getState();
+	}
+
+	recordReviewAnswer(reviewAnswer, date = new Date()) {
+		this.applyPatch(buildReviewAnswerStatePatch(this.state, reviewAnswer, date));
 		return this.getState();
 	}
 

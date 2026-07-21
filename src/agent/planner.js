@@ -34,7 +34,7 @@ function getReviewItem(match, minConfidence) {
 	if (match.safetyDecision && !match.safetyDecision.allowed) {
 		return {
 			field: match.field,
-			matchedProfileProperty: match.matchedProfileProperty ? withoutRawValue(match.matchedProfileProperty) : null,
+			matchedProfileProperty: match.matchedProfileProperty ? withoutRawValue(match.matchedProfileProperty, { includePreview: true }) : null,
 			reason: match.safetyDecision.reason,
 			message: "Sensitive field requires user review before the agent can answer it.",
 			confidenceScore: match.confidenceScore,
@@ -78,13 +78,14 @@ function getReviewItem(match, minConfidence) {
 }
 
 function createActionStep(match, order) {
+	const actionValue = getActionValue(match);
 	const step = buildCapabilityStep({
 		id: `step-${order}`,
 		order,
 		field: match.field,
 		profileProperty: withoutRawValue(match.matchedProfileProperty),
-		actionValue: match.matchedProfileProperty.value,
-		valuePreview: previewValue(match.matchedProfileProperty.value),
+		actionValue,
+		valuePreview: previewValue(actionValue),
 		confidenceScore: match.confidenceScore,
 		reasoning: match.reasoning,
 	});
@@ -92,12 +93,27 @@ function createActionStep(match, order) {
 	return step;
 }
 
-function withoutRawValue(profileProperty) {
-	return {
+function withoutRawValue(profileProperty, options = {}) {
+	const result = {
 		path: profileProperty.path,
 		valueType: profileProperty.valueType,
 		valuePresent: profileProperty.valuePresent,
 	};
+	if (profileProperty.source) result.source = profileProperty.source;
+	if (profileProperty.scope) result.scope = profileProperty.scope;
+	if (profileProperty.reviewAnswer) result.reviewAnswer = profileProperty.reviewAnswer;
+	if (options.includePreview) result.valuePreview = previewValue(profileProperty.value);
+	return result;
+}
+
+function getActionValue(match) {
+	const value = match.matchedProfileProperty.value;
+	if (!match.matchedProfileProperty.reviewAnswer) return value;
+	if (match.field.kind !== "checkbox") return value;
+	const normalized = String(value || "").trim().toLowerCase();
+	if (["yes", "true", "y", "agree", "i agree"].includes(normalized)) return true;
+	if (["no", "false", "n"].includes(normalized)) return false;
+	return value;
 }
 
 function previewValue(value) {

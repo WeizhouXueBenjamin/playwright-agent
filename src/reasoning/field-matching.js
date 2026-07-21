@@ -1,5 +1,8 @@
 const { listProfileProperties } = require("../profile/profile-properties");
 const { classifyFieldIntent, evaluateFieldAnswerSafety } = require("./field-answer-safety");
+const { createReviewAnswerProfileProperty, findReviewAnswerForField } = require("../review/review-resolution");
+const { resolveLocationProfileProperty } = require("./location-resolution");
+const { resolveWorkEligibilityProfileProperty } = require("./work-eligibility-resolution");
 const { scoreTextMatch } = require("./text-similarity");
 
 const MATCHABLE_KINDS = new Set(["text-input", "checkbox", "radio", "selection", "editable", "file-upload", "interactive"]);
@@ -7,9 +10,22 @@ const MATCHABLE_KINDS = new Set(["text-input", "checkbox", "radio", "selection",
 function matchFieldsToProfile(semanticPage, profile, options = {}) {
 	const threshold = options.threshold || 45;
 	const profileProperties = listProfileProperties(profile);
+	const matchableFields = getMatchableFields(semanticPage);
+	const referralSourceDefaultFieldId = findDefaultReferralSourceFieldId(matchableFields);
 
-	return getMatchableFields(semanticPage).map((field) => {
+	return matchableFields
+		.filter((field) => !isIgnoredReferralSourceOption(field, referralSourceDefaultFieldId))
+		.map((field) => {
 		const fieldAnswerSafety = classifyFieldIntent(field);
+		const defaultReferralMatch = matchDefaultReferralSourceOption(field, fieldAnswerSafety, referralSourceDefaultFieldId);
+		if (defaultReferralMatch) return defaultReferralMatch;
+
+		const reviewAnswerMatch = matchExplicitReviewAnswer(field, fieldAnswerSafety, options.runtimeState || {});
+		if (reviewAnswerMatch) return reviewAnswerMatch;
+
+		const deterministicMatch = matchDeterministicProfileValue(field, fieldAnswerSafety, profile);
+		if (deterministicMatch) return deterministicMatch;
+
 		const candidates = rankProfileCandidates(field, profileProperties);
 		const bestCandidate = selectBestCandidate(field, candidates, threshold, fieldAnswerSafety);
 
@@ -49,6 +65,99 @@ function matchFieldsToProfile(semanticPage, profile, options = {}) {
 	});
 }
 
+function matchDeterministicProfileValue(field, fieldAnswerSafety, profile) {
+	const candidate = resolveWorkEligibilityProfileProperty(field, profile)
+		|| resolveLocationProfileProperty(field, profile);
+	if (!candidate) return null;
+
+	const safetyDecision = evaluateFieldAnswerSafety(field, candidate);
+	const allowed = fieldAnswerSafety.riskLevel !== "high" || safetyDecision.allowed;
+
+	return {
+		field: describeField(field),
+		fieldAnswerSafety,
+		matchedProfileProperty: allowed
+			? {
+				path: candidate.path,
+				valueType: candidate.valueType,
+				valuePresent: candidate.valuePresent,
+				value: candidate.value,
+				source: candidate.source,
+			}
+			: null,
+		confidenceScore: allowed ? 100 : 0,
+		reasoning: allowed
+			? `Resolved ${candidate.path} using deterministic ${candidate.source}.`
+			: `Safety guard blocked deterministic value: ${safetyDecision.reason}.`,
+		candidates: [],
+		safetyDecision: fieldAnswerSafety.riskLevel === "high" ? safetyDecision : undefined,
+	};
+}
+
+function matchDefaultReferralSourceOption(field, fieldAnswerSafety, referralSourceDefaultFieldId) {
+	if (field.id !== referralSourceDefaultFieldId) return null;
+
+	const candidate = {
+		path: "referralSource",
+		value: true,
+		valueType: "boolean",
+		valuePresent: true,
+		source: "default-first-referral-source-option",
+		scope: "current-run",
+	};
+	const safetyDecision = evaluateFieldAnswerSafety(field, candidate);
+
+	return {
+		field: describeField(field),
+		fieldAnswerSafety,
+		matchedProfileProperty: {
+			path: candidate.path,
+			valueType: candidate.valueType,
+			valuePresent: candidate.valuePresent,
+			value: candidate.value,
+			source: candidate.source,
+			scope: candidate.scope,
+		},
+		confidenceScore: 100,
+		reasoning: "Selected the first referral-source option by configured product policy.",
+		candidates: [],
+		safetyDecision,
+	};
+}
+
+function matchExplicitReviewAnswer(field, fieldAnswerSafety, runtimeState) {
+	if (fieldAnswerSafety.riskLevel !== "high") return null;
+
+	const reviewAnswer = findReviewAnswerForField(field, fieldAnswerSafety.fieldIntent, runtimeState);
+	if (!reviewAnswer) return null;
+
+	const candidate = createReviewAnswerProfileProperty(reviewAnswer);
+	const safetyDecision = evaluateFieldAnswerSafety(field, candidate);
+	const match = {
+		field: describeField(field),
+		fieldAnswerSafety,
+		matchedProfileProperty: safetyDecision.allowed
+			? {
+				path: candidate.path,
+				valueType: candidate.valueType,
+				valuePresent: candidate.valuePresent,
+				value: candidate.value,
+				source: candidate.source,
+				scope: candidate.scope,
+				reviewAnswer,
+			}
+			: null,
+		confidenceScore: safetyDecision.allowed ? 100 : 0,
+		reasoning: safetyDecision.allowed
+			? "Resolved by explicit run-scoped user review answer."
+			: `Explicit review answer is incompatible: ${safetyDecision.reason}.`,
+		candidates: [],
+		safetyDecision,
+	};
+
+	return match;
+}
+
 function selectRejectedCandidate(field, candidates, threshold, fieldAnswerSafety) {
 	if (fieldAnswerSafety.riskLevel !== "high") {
 		return candidates.find((candidate) => candidate.confidenceScore >= threshold) || null;
@@ -78,6 +187,29 @@ function getMatchableFields(semanticPage) {
 		if (!MATCHABLE_KINDS.has(element.kind)) return false;
 		return element.kind !== "button" && element.kind !== "link";
 	});
+}
+
+function findDefaultReferralSourceFieldId(fields) {
+	const referralGroup = getReferralSourceCheckboxGroup(fields);
+	return referralGroup.length ? referralGroup[0].id : "";
+}
+
+function isIgnoredReferralSourceOption(field, referralSourceDefaultFieldId) {
+	if (!referralSourceDefaultFieldId) return false;
+	if (field.id === referralSourceDefaultFieldId) return false;
+	return isReferralSourceCheckboxOption(field);
+}
+
+function getReferralSourceCheckboxGroup(fields) {
+	const group = fields.filter(isReferralSourceCheckboxOption);
+	return group.length >= 2 ? group : [];
+}
+
+function isReferralSourceCheckboxOption(field) {
+	if (!field || field.kind !== "checkbox") return false;
+	const text = String(field.label && field.label.text || "").toLowerCase();
+	if (!text) return false;
+	return /\b(referral|referred|linkedin|indeed|seek|glassdoor|website|social media|job listing|inmail)\b/.test(text);
 }
 
 function rankProfileCandidates(field, profileProperties) {

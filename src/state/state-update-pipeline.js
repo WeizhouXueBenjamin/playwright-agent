@@ -51,7 +51,38 @@ function buildSuccessfulActionStatePatch(previousState, step, verification, date
 		completedFields,
 		remainingRequiredFields: previousState.remainingRequiredFields.filter((field) => field.id !== step.field.id),
 		uploadedFiles: updateUploadedFiles(previousState.uploadedFiles, step, verification, timestamp),
+		safetyMetrics: updateActionSafetyMetrics(previousState.safetyMetrics, step),
 		currentExecutionStatus: "running",
+		updatedAt: timestamp,
+	};
+}
+
+function buildReviewAnswerStatePatch(previousState, reviewAnswer, date = new Date()) {
+	const timestamp = date.toISOString();
+	const reviewAnswers = upsertReviewAnswer(previousState.reviewAnswers || [], reviewAnswer);
+
+	return {
+		reviewAnswers,
+		safetyMetrics: {
+			...getSafetyMetrics(previousState.safetyMetrics),
+			reviewAnswersProvided: reviewAnswers.length,
+		},
+		currentExecutionStatus: "running",
+		currentBrowserState: "active",
+		updatedAt: timestamp,
+	};
+}
+
+function buildReviewPromptStatePatch(previousState, reviewPrompt, date = new Date()) {
+	const timestamp = date.toISOString();
+	const metrics = getSafetyMetrics(previousState.safetyMetrics);
+
+	return {
+		pendingReviewPrompt: reviewPrompt,
+		safetyMetrics: {
+			...metrics,
+			sensitiveReviewItemsCreated: metrics.sensitiveReviewItemsCreated + 1,
+		},
 		updatedAt: timestamp,
 	};
 }
@@ -168,6 +199,8 @@ function upsertCompletedField(completedFields, step, verification, timestamp) {
 		fieldId: step.field.id,
 		label: toLabelFact(step.field.label),
 		profilePropertyPath: step.profileProperty.path,
+		source: step.profileProperty.source || "",
+		reviewAnswerFingerprint: step.profileProperty.reviewAnswer ? step.profileProperty.reviewAnswer.fieldFingerprint : "",
 		action: step.action,
 		verifiedValue: verification.actual,
 		verifiedAt: timestamp,
@@ -196,8 +229,43 @@ function updateUploadedFiles(uploadedFiles, step, verification, timestamp) {
 	];
 }
 
+function upsertReviewAnswer(reviewAnswers, reviewAnswer) {
+	const existingIndex = reviewAnswers.findIndex((answer) => {
+		return answer.fieldFingerprint === reviewAnswer.fieldFingerprint
+			&& answer.fieldIntent === reviewAnswer.fieldIntent
+			&& answer.statementFingerprint === reviewAnswer.statementFingerprint;
+	});
+	if (existingIndex === -1) return [...reviewAnswers, reviewAnswer];
+	return reviewAnswers.map((answer, index) => index === existingIndex ? reviewAnswer : answer);
+}
+
+function updateActionSafetyMetrics(metrics, step) {
+	const next = getSafetyMetrics(metrics);
+	if (step.profileProperty && step.profileProperty.source === "explicit-user-review") {
+		next.reviewAnswersApplied += 1;
+	}
+	if (step.safetyDecision && step.safetyDecision.allowed === false) {
+		next.unsafeActionsExecuted += 1;
+	}
+	return next;
+}
+
+function getSafetyMetrics(metrics = {}) {
+	return {
+		highRiskFieldsDetected: Number(metrics.highRiskFieldsDetected || 0),
+		unsafeMatchesRejected: Number(metrics.unsafeMatchesRejected || 0),
+		incompatibleValuesRejected: Number(metrics.incompatibleValuesRejected || 0),
+		sensitiveReviewItemsCreated: Number(metrics.sensitiveReviewItemsCreated || 0),
+		reviewAnswersProvided: Number(metrics.reviewAnswersProvided || 0),
+		reviewAnswersApplied: Number(metrics.reviewAnswersApplied || 0),
+		unsafeActionsExecuted: Number(metrics.unsafeActionsExecuted || 0),
+	};
+}
+
 module.exports = {
 	buildObservationStatePatch,
+	buildReviewAnswerStatePatch,
+	buildReviewPromptStatePatch,
 	buildStatusStatePatch,
 	buildSuccessfulActionStatePatch,
 };

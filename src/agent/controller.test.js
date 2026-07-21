@@ -15,8 +15,49 @@ async function main() {
 		await assertStopsOnLoginPage(browser);
 		await assertAdvancesUnexpectedIntermediatePage(browser);
 		await assertStopsBeforeFinalSubmission(browser);
+		await assertResumesAfterReviewAnswer(browser);
 	} finally {
 		await browser.close();
+	}
+}
+
+async function assertResumesAfterReviewAnswer(browser) {
+	const { context, page } = await openPage(browser, createReviewResolutionPageUrl());
+	try {
+		await waitForPageStable(page);
+
+		const answers = [];
+		const controller = new AgentController({
+			maxCycles: 10,
+			reviewAnswerProvider: async ({ reviewPrompt }) => {
+				answers.push(reviewPrompt);
+				return { answer: "Yes" };
+			},
+		});
+		const profile = {
+			firstName: "Aroha",
+			workAuthorization: "Open work visa valid until 2027",
+		};
+		const originalProfile = structuredClone(profile);
+		const result = await controller.runOnPage(page, profile);
+
+		assert.equal(result.status, "awaiting-human-confirmation");
+		assert.equal(answers.length, 1);
+		assert.equal(answers[0].question, "Are you legally authorized to work in New Zealand?");
+		assert.deepEqual(answers[0].options, [{ label: "Yes" }, { label: "No" }]);
+		assert.equal(await page.getByLabel("First name").inputValue(), "Aroha");
+		assert.equal(await page.getByLabel("Are you legally authorized to work in New Zealand?").inputValue(), "Yes");
+		assert.equal(await page.locator("#submitted").textContent(), "not submitted");
+		assert.equal(result.runtimeState.reviewAnswers.length, 1);
+		assert.equal(result.runtimeState.reviewAnswers[0].source, "explicit-user-review");
+		assert.equal(result.runtimeState.reviewAnswers[0].scope, "current-run");
+		assert.equal(result.runtimeState.completedFields.some((field) => field.source === "explicit-user-review"), true);
+		assert.equal(result.runtimeState.safetyMetrics.reviewAnswersProvided, 1);
+		assert.equal(result.runtimeState.safetyMetrics.reviewAnswersApplied, 1);
+		assert.equal(result.runtimeState.safetyMetrics.unsafeActionsExecuted, 0);
+		assert.deepEqual(profile, originalProfile);
+	} finally {
+		await context.close();
 	}
 }
 
@@ -275,6 +316,30 @@ function createFinalSubmitPageUrl() {
 		"<html>",
 		"<body>",
 		"<form onsubmit=\"document.querySelector('#submitted').textContent = 'submitted'; return false;\">",
+		"<button type=\"submit\">Submit application</button>",
+		"</form>",
+		"<div id=\"submitted\">not submitted</div>",
+		"</body>",
+		"</html>",
+	].join("");
+
+	return `data:text/html,${encodeURIComponent(html)}`;
+}
+
+function createReviewResolutionPageUrl() {
+	const html = [
+		"<!doctype html>",
+		"<html>",
+		"<body>",
+		"<form onsubmit=\"document.querySelector('#submitted').textContent = 'submitted'; return false;\">",
+		"<label for=\"first\">First name</label>",
+		"<input id=\"first\" name=\"firstName\" required>",
+		"<label for=\"workAuth\">Are you legally authorized to work in New Zealand?</label>",
+		"<select id=\"workAuth\" name=\"workAuth\" required>",
+		"<option value=\"\">Select...</option>",
+		"<option>Yes</option>",
+		"<option>No</option>",
+		"</select>",
 		"<button type=\"submit\">Submit application</button>",
 		"</form>",
 		"<div id=\"submitted\">not submitted</div>",
