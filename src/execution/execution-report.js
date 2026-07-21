@@ -63,6 +63,7 @@ function buildExecutionReport(result) {
 			nextUserAction: getNextUserAction(result),
 		},
 		safetyMetrics: getSafetyMetrics(result),
+		decisionProvenanceMetrics: getDecisionProvenanceMetrics(result),
 		executedActions,
 		recoveryAttempts,
 		retries: recoveryAttempts.filter((attempt) => attempt.strategy === "retry"),
@@ -106,7 +107,11 @@ function buildTimelineEntry(entry) {
 			field: entry.actionResult.step.field && entry.actionResult.step.field.label,
 			verificationOk: entry.actionResult.verification.ok === true,
 			safetyDecision: entry.actionResult.step.safetyDecision,
+			provenance: entry.actionResult.step.provenance,
 		};
+	}
+	if (entry.decisionGate) {
+		timelineEntry.decisionGate = entry.decisionGate;
 	}
 
 	if (entry.recovery) {
@@ -149,6 +154,19 @@ function getSafetyMetrics(result = {}) {
 		reviewAnswersProvided: Number(runtimeMetrics.reviewAnswersProvided || 0),
 		reviewAnswersApplied: Number(runtimeMetrics.reviewAnswersApplied || 0),
 		unsafeActionsExecuted: Number(runtimeMetrics.unsafeActionsExecuted || executedUnsafeActions),
+	};
+}
+
+function getDecisionProvenanceMetrics(result = {}) {
+	const runtimeMetrics = result.runtimeState && result.runtimeState.decisionProvenanceMetrics || {};
+	return {
+		aiSemanticDecisionCount: Number(runtimeMetrics.aiSemanticDecisionCount || 0),
+		deterministicSemanticDecisionCount: Number(runtimeMetrics.deterministicSemanticDecisionCount || 0),
+		safetyOverrideCount: Number(runtimeMetrics.safetyOverrideCount || 0),
+		policyOverrideCount: Number(runtimeMetrics.policyOverrideCount || 0),
+		aiDecisionAcceptedCount: Number(runtimeMetrics.aiDecisionAcceptedCount || 0),
+		aiDecisionRejectedCount: Number(runtimeMetrics.aiDecisionRejectedCount || 0),
+		reviewDecisionCount: Number(runtimeMetrics.reviewDecisionCount || 0),
 	};
 }
 

@@ -2,6 +2,7 @@ const { createInitialRuntimeState } = require("./runtime-state");
 const { assertRuntimeStateContract, assertRuntimeStatePatchContract } = require("../contracts/runtime-state");
 const {
 	buildObservationStatePatch,
+	buildDecisionGateStatePatch,
 	buildReviewAnswerStatePatch,
 	buildReviewPromptStatePatch,
 	buildSuccessfulActionStatePatch,
@@ -32,6 +33,11 @@ class StateManager {
 
 	recordReviewAnswer(reviewAnswer, date = new Date()) {
 		this.applyPatch(buildReviewAnswerStatePatch(this.state, reviewAnswer, date));
+		return this.getState();
+	}
+
+	recordDecisionGateResult(gateResult, date = new Date()) {
+		this.applyPatch(buildDecisionGateStatePatch(this.state, gateResult, date));
 		return this.getState();
 	}
 

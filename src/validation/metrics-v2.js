@@ -71,6 +71,7 @@ function buildDecisionMetrics(execution) {
 	const verificationResults = execution.verificationResults || [];
 	const verificationConsistentCount = verificationResults.filter((verification) => verification.ok === true).length;
 	const verificationInconsistentCount = verificationResults.filter((verification) => verification.ok !== true).length;
+	const provenance = execution.decisionProvenanceMetrics || {};
 
 	return {
 		decisionCount: decisionEntries.length,
@@ -86,6 +87,15 @@ function buildDecisionMetrics(execution) {
 			verificationInconsistentCount,
 			recoveryAttemptCount: execution.summary ? execution.summary.recoveryAttemptCount : 0,
 		}),
+		provenance: {
+			aiSemanticDecisionCount: Number(provenance.aiSemanticDecisionCount || 0),
+			deterministicSemanticDecisionCount: Number(provenance.deterministicSemanticDecisionCount || 0),
+			safetyOverrideCount: Number(provenance.safetyOverrideCount || 0),
+			policyOverrideCount: Number(provenance.policyOverrideCount || 0),
+			aiDecisionAcceptedCount: Number(provenance.aiDecisionAcceptedCount || 0),
+			aiDecisionRejectedCount: Number(provenance.aiDecisionRejectedCount || 0),
+			reviewDecisionCount: Number(provenance.reviewDecisionCount || 0),
+		},
 	};
 }
 

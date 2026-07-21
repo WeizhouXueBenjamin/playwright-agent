@@ -34,6 +34,7 @@ function buildSuccessfulActionStatePatch(previousState, step, verification, date
 			fieldId: step.field.id,
 			fieldLabel: toLabelFact(step.field.label),
 			profilePropertyPath: step.profileProperty ? step.profileProperty.path : "",
+			provenance: step.provenance || {},
 			verifiedAt: timestamp,
 			verification: {
 				expected: verification.expected,
@@ -91,6 +92,13 @@ function buildStatusStatePatch(status, date = new Date()) {
 	return {
 		currentExecutionStatus: status,
 		currentBrowserState: isTerminalStatus(status) ? "terminal" : "active",
+		updatedAt: date.toISOString(),
+	};
+}
+
+function buildDecisionGateStatePatch(previousState, gateResult, date = new Date()) {
+	return {
+		decisionProvenanceMetrics: updateDecisionProvenanceMetrics(previousState.decisionProvenanceMetrics, gateResult),
 		updatedAt: date.toISOString(),
 	};
 }
@@ -200,6 +208,7 @@ function upsertCompletedField(completedFields, step, verification, timestamp) {
 		label: toLabelFact(step.field.label),
 		profilePropertyPath: step.profileProperty.path,
 		source: step.profileProperty.source || "",
+		provenance: step.provenance || {},
 		reviewAnswerFingerprint: step.profileProperty.reviewAnswer ? step.profileProperty.reviewAnswer.fieldFingerprint : "",
 		action: step.action,
 		verifiedValue: verification.actual,
@@ -262,10 +271,40 @@ function getSafetyMetrics(metrics = {}) {
 	};
 }
 
+function updateDecisionProvenanceMetrics(metrics = {}, gateResult = {}) {
+	const next = getDecisionProvenanceMetrics(metrics);
+	const semanticOwner = gateResult.provenance && gateResult.provenance.semanticOwner || "";
+	const approvalOwner = gateResult.provenance && gateResult.provenance.approvalOwner || "";
+
+	if (semanticOwner === "ai") next.aiSemanticDecisionCount += 1;
+	if (semanticOwner === "deterministic-semantic-rule") next.deterministicSemanticDecisionCount += 1;
+	if (approvalOwner === "safety-guard") next.safetyOverrideCount += 1;
+	if (approvalOwner === "policy") next.policyOverrideCount += 1;
+	if (gateResult.type === "review-item") next.reviewDecisionCount += 1;
+	if (semanticOwner === "ai" && gateResult.type === "approved-action") next.aiDecisionAcceptedCount += 1;
+	if (semanticOwner === "ai" && gateResult.type !== "approved-action") next.aiDecisionRejectedCount += 1;
+
+	return next;
+}
+
+function getDecisionProvenanceMetrics(metrics = {}) {
+	return {
+		aiSemanticDecisionCount: Number(metrics.aiSemanticDecisionCount || 0),
+		deterministicSemanticDecisionCount: Number(metrics.deterministicSemanticDecisionCount || 0),
+		safetyOverrideCount: Number(metrics.safetyOverrideCount || 0),
+		policyOverrideCount: Number(metrics.policyOverrideCount || 0),
+		aiDecisionAcceptedCount: Number(metrics.aiDecisionAcceptedCount || 0),
+		aiDecisionRejectedCount: Number(metrics.aiDecisionRejectedCount || 0),
+		reviewDecisionCount: Number(metrics.reviewDecisionCount || 0),
+	};
+}
+
 module.exports = {
+	buildDecisionGateStatePatch,
 	buildObservationStatePatch,
 	buildReviewAnswerStatePatch,
 	buildReviewPromptStatePatch,
 	buildStatusStatePatch,
 	buildSuccessfulActionStatePatch,
+	getDecisionProvenanceMetrics,
 };

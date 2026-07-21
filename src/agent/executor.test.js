@@ -53,8 +53,9 @@ async function assertStopsAfterFailure(browser) {
 
 		const result = await executePlanOnPage(page, plan);
 
-		assert.equal(result.status, "failed");
+		assert.equal(result.status, "rejected");
 		assert.equal(result.failedStepId, "step-2");
+		assert.equal(result.reason, "unsupported-target-capability");
 		assert.equal(result.results.length, 2);
 		assert.equal(await page.getByLabel("I agree").isChecked(), false);
 	} finally {

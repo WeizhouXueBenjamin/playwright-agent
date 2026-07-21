@@ -10,8 +10,17 @@ async function runVerifiedAction(input) {
 		step,
 		beforeObservation,
 		interactionStability,
+		requireDecisionGate = true,
 	} = input;
 	let action;
+
+	if (requireDecisionGate && (!step.provenance || step.provenance.approvalOwner !== "decision-gate")) {
+		return {
+			step,
+			action: null,
+			verification: buildVerificationFailure(new Error("decision-gate-approval-required")),
+		};
+	}
 
 	try {
 		action = await executeStep(page, step);

@@ -5,6 +5,7 @@ const { openPage, openPageInContext } = require("../browser/page");
 const { waitForPageStable } = require("../browser/stability");
 const { runVerifiedAction } = require("../execution/verified-action-runner");
 const { RecoveryEngine } = require("../recovery/recovery-engine");
+const { gateStepForCurrentObservation } = require("./decision-gate");
 const { buildReviewAnswer, formatReviewPrompt, normalizeReviewPrompt } = require("../review/review-resolution");
 const { StateManager } = require("../state/state-manager");
 
@@ -152,20 +153,58 @@ class AgentController {
 				};
 			}
 
+			const gateResult = await gateStepForCurrentObservation({
+				step: plannerDecision.step,
+				observation,
+				runtimeState: stateManager.getState(),
+				profile,
+				goal: this.options.goal || "",
+				history: lifecycle,
+			});
+			stateManager.recordDecisionGateResult(gateResult);
+
+			if (gateResult.type !== "approved-action") {
+				lifecycle.push({
+					...lifecycleEntry,
+					phase: "observe-think-gate",
+					timestamp: new Date().toISOString(),
+					decisionGate: summarizeGateResult(gateResult),
+					runtimeStateSnapshot: stateManager.getState(),
+				});
+				if (gateResult.type === "review-item") {
+					stateManager.setExecutionStatus("needs-review");
+					return {
+						status: "needs-review",
+						reason: gateResult.reason,
+						runtimeState: stateManager.getState(),
+						lifecycle,
+					};
+				}
+				if (gateResult.reason === "runtime-state-already-completed") continue;
+				stateManager.setExecutionStatus("verification-failed");
+				return {
+					status: "verification-failed",
+					reason: gateResult.reason,
+					runtimeState: stateManager.getState(),
+					lifecycle,
+				};
+			}
+
 			const actionResult = await runVerifiedAction({
 				page,
-				step: plannerDecision.step,
+				step: gateResult.step,
 				beforeObservation: observation,
 				interactionStability: this.options.interactionStability,
 			});
 			if (actionResult.verification.ok) {
-				stateManager.applySuccessfulAction(plannerDecision.step, actionResult.verification);
+				stateManager.applySuccessfulAction(gateResult.step, actionResult.verification);
 			}
 			lifecycle.push({
 				...lifecycleEntry,
 				phase: "observe-think-act-verify",
 				timestamp: new Date().toISOString(),
 				actionResult,
+				decisionGate: summarizeGateResult(gateResult),
 				runtimeStateSnapshot: stateManager.getState(),
 			});
 
@@ -173,10 +212,12 @@ class AgentController {
 				const recovery = await this.recoveryEngine.recover({
 					page,
 					profile,
-					step: plannerDecision.step,
+					step: gateResult.step,
 					actionResult,
 					beforeObservation: observation,
 					stateManager,
+					goal: this.options.goal || "",
+					lifecycle,
 				});
 				lifecycle[lifecycle.length - 1].recovery = summarizeRecovery(recovery);
 				lifecycle[lifecycle.length - 1].runtimeStateSnapshot = stateManager.getState();
@@ -220,6 +261,15 @@ function summarizeRecovery(recovery) {
 		failureType: recovery.failure && recovery.failure.type,
 		message: recovery.message || "",
 		retryAttempt: recovery.retryAttempt || 0,
+	};
+}
+
+function summarizeGateResult(gateResult) {
+	return {
+		type: gateResult.type,
+		reason: gateResult.reason,
+		decisionId: gateResult.decisionId,
+		provenance: gateResult.provenance,
 	};
 }
 

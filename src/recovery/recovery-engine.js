@@ -43,7 +43,14 @@ class RecoveryEngine {
 
 	async retry(context, failure) {
 		const retryAttempt = this.retryPolicy.recordRetry(failure);
-		const actionResult = await retrySameAction(context.page, context.step, this.options);
+		const actionResult = await retrySameAction(context.page, context.step, {
+			...this.options,
+			runtimeState: context.stateManager.getState(),
+			profile: context.profile,
+			goal: context.goal,
+			history: context.lifecycle,
+			stateManager: context.stateManager,
+		});
 		const observation = await reobserve(context.page, context.stateManager);
 
 		if (actionResult.verification.ok) {
