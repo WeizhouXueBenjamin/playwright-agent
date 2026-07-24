@@ -12,6 +12,13 @@ function createInitialRuntimeState(goal = "") {
 		completedFields: [],
 		skippedFields: [],
 		manualReview: [],
+		reviewCheckpoints: [],
+		pendingReviewCheckpoint: null,
+		interactiveReview: {
+			enabled: false,
+			checkpointCount: 0,
+			resolvedItemCount: 0,
+		},
 		reviewAnswers: [],
 		remainingRequiredFields: [],
 		uploadedFiles: [],

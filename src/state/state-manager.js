@@ -5,6 +5,7 @@ const {
 	buildDecisionGateStatePatch,
 	buildManualCompletionStatePatch,
 	buildReviewAnswerStatePatch,
+	buildReviewCheckpointStatePatch,
 	buildReviewPromptStatePatch,
 	buildSkippedFieldStatePatch,
 	buildSuccessfulActionStatePatch,
@@ -30,6 +31,11 @@ class StateManager {
 
 	recordReviewPrompt(reviewPrompt, date = new Date()) {
 		this.applyPatch(buildReviewPromptStatePatch(this.state, reviewPrompt, date));
+		return this.getState();
+	}
+
+	recordReviewCheckpoint(checkpoint, date = new Date()) {
+		this.applyPatch(buildReviewCheckpointStatePatch(this.state, checkpoint, date));
 		return this.getState();
 	}
 

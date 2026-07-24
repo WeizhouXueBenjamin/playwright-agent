@@ -117,6 +117,24 @@ function buildReviewPromptStatePatch(previousState, reviewPrompt, date = new Dat
 	};
 }
 
+function buildReviewCheckpointStatePatch(previousState, checkpoint, date = new Date()) {
+	const timestamp = date.toISOString();
+	const existing = previousState.reviewCheckpoints || [];
+	const reviewCheckpoints = upsertCheckpoint(existing, checkpoint);
+
+	return {
+		reviewCheckpoints,
+		pendingReviewCheckpoint: checkpoint.status === "waiting-for-user" ? checkpoint : null,
+		interactiveReview: {
+			enabled: true,
+			checkpointCount: reviewCheckpoints.length,
+			resolvedItemCount: reviewCheckpoints.reduce((total, item) => total + (item.decisions || []).length, 0),
+		},
+		manualReview: mergePromptsFromCheckpoint(previousState.manualReview || [], checkpoint),
+		updatedAt: timestamp,
+	};
+}
+
 function buildStatusStatePatch(status, date = new Date()) {
 	return {
 		currentExecutionStatus: status,
@@ -252,6 +270,22 @@ function upsertReviewAnswer(reviewAnswers, reviewAnswer) {
 	return reviewAnswers.map((answer, index) => index === existingIndex ? reviewAnswer : answer);
 }
 
+function upsertCheckpoint(checkpoints, checkpoint) {
+	const existingIndex = checkpoints.findIndex((item) => item.id === checkpoint.id);
+	if (existingIndex === -1) return [...checkpoints, checkpoint];
+	return checkpoints.map((item, index) => index === existingIndex ? checkpoint : item);
+}
+
+function mergePromptsFromCheckpoint(manualReview, checkpoint) {
+	const prompts = (checkpoint.items || []).map((item) => item.legacyPrompt).filter(Boolean);
+	const merged = [...manualReview];
+	for (const prompt of prompts) {
+		if (merged.some((item) => item.fieldFingerprint === prompt.fieldFingerprint)) continue;
+		merged.push(prompt);
+	}
+	return merged;
+}
+
 function upsertByFingerprint(items, item) {
 	const fingerprint = item.fieldFingerprint || "";
 	const existingIndex = items.findIndex((existing) => existing.fieldFingerprint === fingerprint && fingerprint);
@@ -271,6 +305,7 @@ module.exports = {
 	buildDecisionGateStatePatch,
 	buildObservationStatePatch,
 	buildReviewAnswerStatePatch,
+	buildReviewCheckpointStatePatch,
 	buildReviewPromptStatePatch,
 	buildManualCompletionStatePatch,
 	buildSkippedFieldStatePatch,

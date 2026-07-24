@@ -17,6 +17,7 @@ async function main() {
 		await assertAdvancesUnexpectedIntermediatePage(browser);
 		await assertStopsBeforeFinalSubmission(browser);
 		await assertReviewHoldKeepsRunPending(browser);
+		await assertNonInteractiveCheckpointAfterSafeFields(browser);
 		await assertGateReviewUsesReviewProvider(browser);
 		await assertResumesAfterReviewAnswer(browser);
 		await assertSupportsReviewSkip(browser);
@@ -25,6 +26,29 @@ async function main() {
 		await assertSupportsReviewStop(browser);
 	} finally {
 		await browser.close();
+	}
+}
+
+async function assertNonInteractiveCheckpointAfterSafeFields(browser) {
+	const { context, page } = await openPage(browser, createCheckpointReviewPageUrl());
+	try {
+		await waitForPageStable(page);
+
+		const controller = new AgentController({ maxCycles: 10 });
+		const result = await controller.runOnPage(page, {
+			firstName: "Aroha",
+		});
+
+		assert.equal(result.status, "needs-review");
+		assert.equal(result.reason, "review-checkpoint-pending");
+		assert.equal(await page.getByLabel("First name").inputValue(), "Aroha");
+		assert.equal(await page.locator("#submitted").textContent(), "not submitted");
+		assert.equal(result.runtimeState.pendingReviewCheckpoint.items.length, 2);
+		assert.equal(result.runtimeState.pendingReviewCheckpoint.items[0].type, "consent-authorization");
+		assert.equal(result.runtimeState.pendingReviewCheckpoint.items[1].type, "manual-value-required");
+		assert.equal(result.runtimeState.finalSubmissionTriggered, false);
+	} finally {
+		await context.close();
 	}
 }
 
@@ -63,27 +87,35 @@ async function assertGateReviewUsesReviewProvider(browser) {
 }
 
 async function assertManualFailureReturnsToReview(browser) {
-	const { context, page } = await openPage(browser, createReviewResolutionPageUrl());
+	const { context, page } = await openPage(browser, createManualReviewPageUrl());
 	try {
 		await waitForPageStable(page);
 		let reviewCalls = 0;
 		const controller = new AgentController({
 			maxCycles: 10,
-			reviewAnswerProvider: async () => {
+			gateStep: async ({ step }) => ({
+				type: "review-item",
+				reason: "gate-review-required",
+				step,
+				field: step.field,
+				safetyDecision: {
+					fieldIntent: "first-name",
+					reason: "manual-verification-regression",
+				},
+			}),
+			reviewAnswerProvider: async ({ page: activePage }) => {
 				reviewCalls += 1;
-				if (reviewCalls === 1) return { command: "manual" };
-				return { answer: "Yes", resolutionMethod: "user-edited" };
+				if (reviewCalls === 2) await activePage.getByLabel("First name").fill("Aroha");
+				return { command: "manual" };
 			},
 		});
-		const result = await controller.runOnPage(page, {
-			firstName: "Aroha",
-			workAuthorization: "Open work visa valid until 2027",
-		});
+		const result = await controller.runOnPage(page, { firstName: "Aroha" });
 
 		assert.equal(reviewCalls, 2);
 		assert.equal(result.status, "awaiting-human-confirmation");
 		assert.equal(result.lifecycle.some((entry) => entry.phase === "observe-think-review-manual-unverified"), true);
-		assert.equal(await page.getByLabel("Are you legally authorized to work in New Zealand?").inputValue(), "Yes");
+		assert.equal(result.runtimeState.completedFields.some((field) => field.resolutionMethod === "manual"), true);
+		assert.equal(await page.getByLabel("First name").inputValue(), "Aroha");
 		assert.equal(await page.locator("#submitted").textContent(), "not submitted");
 	} finally {
 		await context.close();
@@ -99,10 +131,14 @@ async function assertReviewHoldKeepsRunPending(browser) {
 		const reviewStarted = [];
 		const controller = new AgentController({
 			maxCycles: 10,
-			reviewAnswerProvider: async ({ runtimeState }) => {
+			reviewCheckpointProvider: async ({ reviewCheckpoint, runtimeState }) => {
 				reviewStarted.push(runtimeState.currentExecutionStatus);
 				return new Promise((resolve) => {
-					resolveReview = resolve;
+					resolveReview = () => resolve(reviewCheckpoint.items.map((item) => ({
+						itemId: item.id,
+						action: "select",
+						value: "Yes",
+					})));
 				});
 			},
 		});
@@ -181,7 +217,10 @@ async function assertSupportsReviewStop(browser) {
 
 		const controller = new AgentController({
 			maxCycles: 10,
-			reviewAnswerProvider: async () => ({ command: "stop" }),
+			reviewCheckpointProvider: async ({ reviewCheckpoint }) => reviewCheckpoint.items.map((item) => ({
+				itemId: item.id,
+				action: "stop",
+			})),
 		});
 		const result = await controller.runOnPage(page, { firstName: "Aroha" });
 
@@ -198,12 +237,16 @@ async function assertResumesAfterReviewAnswer(browser) {
 	try {
 		await waitForPageStable(page);
 
-		const answers = [];
+		const checkpoints = [];
 		const controller = new AgentController({
 			maxCycles: 10,
-			reviewAnswerProvider: async ({ reviewPrompt }) => {
-				answers.push(reviewPrompt);
-				return { answer: "Yes" };
+			reviewCheckpointProvider: async ({ reviewCheckpoint }) => {
+				checkpoints.push(reviewCheckpoint);
+				return reviewCheckpoint.items.map((item) => ({
+					itemId: item.id,
+					action: "select",
+					value: "Yes",
+				}));
 			},
 		});
 		const profile = {
@@ -214,9 +257,9 @@ async function assertResumesAfterReviewAnswer(browser) {
 		const result = await controller.runOnPage(page, profile);
 
 		assert.equal(result.status, "awaiting-human-confirmation");
-		assert.equal(answers.length, 1);
-		assert.equal(answers[0].question, "Are you legally authorized to work in New Zealand?");
-		assert.deepEqual(answers[0].options, [{ label: "Yes" }, { label: "No" }]);
+		assert.equal(checkpoints.length, 1);
+		assert.equal(checkpoints[0].items[0].fieldLabel.text, "Are you legally authorized to work in New Zealand?");
+		assert.deepEqual(checkpoints[0].items[0].options, [{ label: "Yes" }, { label: "No" }]);
 		assert.equal(await page.getByLabel("First name").inputValue(), "Aroha");
 		assert.equal(await page.getByLabel("Are you legally authorized to work in New Zealand?").inputValue(), "Yes");
 		assert.equal(await page.locator("#submitted").textContent(), "not submitted");
@@ -239,7 +282,10 @@ async function assertSupportsReviewSkip(browser) {
 
 		const controller = new AgentController({
 			maxCycles: 10,
-			reviewAnswerProvider: async () => ({ command: "skip" }),
+			reviewCheckpointProvider: async ({ reviewCheckpoint }) => reviewCheckpoint.items.map((item) => ({
+				itemId: item.id,
+				action: "skip",
+			})),
 		});
 		const result = await controller.runOnPage(page, { firstName: "Aroha" });
 
@@ -254,14 +300,24 @@ async function assertSupportsReviewSkip(browser) {
 }
 
 async function assertSupportsReviewManual(browser) {
-	const { context, page } = await openPage(browser, createReviewResolutionPageUrl());
+	const { context, page } = await openPage(browser, createManualReviewPageUrl());
 	try {
 		await waitForPageStable(page);
 
 		const controller = new AgentController({
 			maxCycles: 10,
+			gateStep: async ({ step }) => ({
+				type: "review-item",
+				reason: "gate-review-required",
+				step,
+				field: step.field,
+				safetyDecision: {
+					fieldIntent: "first-name",
+					reason: "manual-completion-regression",
+				},
+			}),
 			reviewAnswerProvider: async ({ page: activePage }) => {
-				await activePage.getByLabel("Are you legally authorized to work in New Zealand?").selectOption({ label: "Yes" });
+				await activePage.getByLabel("First name").fill("Aroha");
 				return { command: "manual" };
 			},
 		});
@@ -269,7 +325,7 @@ async function assertSupportsReviewManual(browser) {
 
 		assert.equal(result.status, "awaiting-human-confirmation");
 		assert.equal(result.runtimeState.completedFields.some((field) => field.resolutionMethod === "manual"), true);
-		assert.equal(await page.getByLabel("Are you legally authorized to work in New Zealand?").inputValue(), "Yes");
+		assert.equal(await page.getByLabel("First name").inputValue(), "Aroha");
 		assert.equal(await page.locator("#submitted").textContent(), "not submitted");
 	} finally {
 		await context.close();
@@ -536,6 +592,46 @@ function createFinalSubmitPageUrl() {
 		"<html>",
 		"<body>",
 		"<form onsubmit=\"document.querySelector('#submitted').textContent = 'submitted'; return false;\">",
+		"<button type=\"submit\">Submit application</button>",
+		"</form>",
+		"<div id=\"submitted\">not submitted</div>",
+		"</body>",
+		"</html>",
+	].join("");
+
+	return `data:text/html,${encodeURIComponent(html)}`;
+}
+
+function createCheckpointReviewPageUrl() {
+	const html = [
+		"<!doctype html>",
+		"<html>",
+		"<body>",
+		"<form onsubmit=\"document.querySelector('#submitted').textContent = 'submitted'; return false;\">",
+		"<label for=\"first\">First name</label>",
+		"<input id=\"first\" name=\"firstName\" required>",
+		"<label for=\"privacy\">Recruitment Privacy Policy</label>",
+		"<input id=\"privacy\" name=\"privacy\" type=\"checkbox\" required>",
+		"<label for=\"salary\">Expected salary</label>",
+		"<input id=\"salary\" name=\"salary\" required>",
+		"<button type=\"submit\">Submit application</button>",
+		"</form>",
+		"<div id=\"submitted\">not submitted</div>",
+		"</body>",
+		"</html>",
+	].join("");
+
+	return `data:text/html,${encodeURIComponent(html)}`;
+}
+
+function createManualReviewPageUrl() {
+	const html = [
+		"<!doctype html>",
+		"<html>",
+		"<body>",
+		"<form onsubmit=\"document.querySelector('#submitted').textContent = 'submitted'; return false;\">",
+		"<label for=\"first\">First name</label>",
+		"<input id=\"first\" name=\"firstName\" required>",
 		"<button type=\"submit\">Submit application</button>",
 		"</form>",
 		"<div id=\"submitted\">not submitted</div>",

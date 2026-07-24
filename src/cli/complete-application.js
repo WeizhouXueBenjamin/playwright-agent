@@ -4,6 +4,7 @@ const readline = require("node:readline/promises");
 
 const { BrowserAIAgent } = require("../agent/browser-ai-agent");
 const { createRunLogDir, writeJsonArtifact } = require("../logging/artifact-store");
+const { REVIEW_TYPES } = require("../review/review-types");
 
 const DEFAULT_PROFILE_PATH = path.join("data", "profile-full-stack.json");
 
@@ -19,6 +20,11 @@ async function main() {
 		output: process.stdout,
 		errorOutput: process.stderr,
 	});
+	const reviewCheckpointProvider = createReviewCheckpointProvider({
+		input: process.stdin,
+		output: process.stdout,
+		errorOutput: process.stderr,
+	});
 	const profile = JSON.parse(await fs.readFile(profilePath, "utf8"));
 	const { runId, runDir } = await createRunLogDir(path.join("logs", "apply"));
 	const agent = new BrowserAIAgent({
@@ -26,6 +32,7 @@ async function main() {
 		persistent: true,
 		userDataDir: path.resolve(".playwright", "apply-profile"),
 		reviewAnswerProvider,
+		reviewCheckpointProvider,
 	});
 	const result = await agent.completeJobApplication({
 		url: new URL(url).toString(),
@@ -51,11 +58,108 @@ async function main() {
 
 function createReviewAnswerProvider(options = {}) {
 	if (!options.input || options.input.isTTY !== true || !options.output || options.output.isTTY !== true) {
-		throw new Error(
-			"Interactive terminal required for human review. Run npm run apply directly in a terminal.",
-		);
+		return null;
 	}
 	return createCliReviewAnswerProvider(options);
+}
+
+function createReviewCheckpointProvider(options = {}) {
+	if (!options.input || options.input.isTTY !== true || !options.output || options.output.isTTY !== true) {
+		return null;
+	}
+	return createCliReviewCheckpointProvider(options);
+}
+
+function createCliReviewCheckpointProvider(options = {}) {
+	const input = options.input || process.stdin;
+	const output = options.output || process.stdout;
+	const errorOutput = options.errorOutput || process.stderr;
+	return async ({ reviewCheckpoint, runtimeState }) => {
+		const rl = readline.createInterface({ input, output });
+		try {
+			errorOutput.write(formatCheckpointSummary(reviewCheckpoint, runtimeState));
+			const decisions = [];
+			for (const item of reviewCheckpoint.items || []) {
+				const decision = await askCheckpointItem({ rl, item, errorOutput });
+				decisions.push({ itemId: item.id, ...decision });
+				if (decision.action === "stop") return decisions;
+			}
+			errorOutput.write(formatDecisionSummary(reviewCheckpoint, decisions));
+			while (true) {
+				const command = (await rl.question("[R]esume application [Q]uit > ")).trim().toLowerCase();
+				if (command === "q" || command === "quit") return [{ action: "stop", itemId: "__checkpoint" }];
+				if (command === "r" || command === "resume") return decisions;
+				errorOutput.write("Choose R or Q.\n");
+			}
+		} finally {
+			rl.close();
+		}
+	};
+}
+
+async function askCheckpointItem({ rl, item, errorOutput }) {
+	errorOutput.write(formatCheckpointItem(item));
+	while (true) {
+		const command = (await rl.question(promptForItem(item))).trim();
+		const decision = await parseItemDecision({ rl, item, command, errorOutput });
+		if (decision) return decision;
+	}
+}
+
+async function parseItemDecision({ rl, item, command, errorOutput }) {
+	const normalized = command.toLowerCase();
+	if (normalized === "q" || normalized === "stop") return { action: "stop" };
+
+	if (item.type === REVIEW_TYPES.CONSENT_AUTHORIZATION) {
+		if (normalized === "a" || normalized === "authorize") {
+			const confirm = (await rl.question("Authorize this exact current statement for this run? [y/N] ")).trim().toLowerCase();
+			if (confirm === "y" || confirm === "yes") return { action: "authorize" };
+			return null;
+		}
+		if (normalized === "d" || normalized === "decline") return { action: "decline" };
+		errorOutput.write("Choose A, D, or Q.\n");
+		return null;
+	}
+
+	if (item.type === REVIEW_TYPES.CONFIRM_PROPOSED_VALUE) {
+		if (normalized === "c" || normalized === "confirm") return { action: "confirm" };
+		if (normalized === "r" || normalized === "replace") {
+			const value = (await rl.question("Replacement value > ")).trim();
+			return value ? { action: "replace", value } : null;
+		}
+		if (normalized === "s" || normalized === "skip") return { action: "skip" };
+		errorOutput.write("Choose C, R, S, or Q.\n");
+		return null;
+	}
+
+	if (item.type === REVIEW_TYPES.OPTION_SELECTION) {
+		const optionIndex = Number(normalized);
+		if (Number.isInteger(optionIndex) && optionIndex >= 1 && optionIndex <= item.options.length) {
+			return { action: "select", value: item.options[optionIndex - 1].label };
+		}
+		if (normalized === "p" || normalized === "prefer-not-to-answer") return { action: "prefer-not-to-answer" };
+		if (normalized === "s" || normalized === "skip") return { action: "skip" };
+		errorOutput.write("Choose an option number, P, S, or Q.\n");
+		return null;
+	}
+
+	if (item.type === REVIEW_TYPES.FILE_REQUIRED) {
+		if (normalized === "f" || normalized === "file") {
+			const value = (await rl.question("Configured file path > ")).trim();
+			return value ? { action: "provide-file", value } : null;
+		}
+		if (normalized === "s" || normalized === "skip") return { action: "skip" };
+		errorOutput.write("Choose F, S, or Q.\n");
+		return null;
+	}
+
+	if (normalized === "i" || normalized === "input" || normalized === "provide-value") {
+		const value = (await rl.question("Value > ")).trim();
+		return value ? { action: "provide-value", value } : null;
+	}
+	if (normalized === "s" || normalized === "skip") return { action: "skip" };
+	errorOutput.write("Choose I, S, or Q.\n");
+	return null;
 }
 
 function createCliReviewAnswerProvider(options = {}) {
@@ -109,6 +213,63 @@ function createCliReviewAnswerProvider(options = {}) {
 	};
 }
 
+function formatCheckpointSummary(reviewCheckpoint, runtimeState = {}) {
+	return [
+		"\nHuman review checkpoint",
+		"",
+		"Completed automatically:",
+		`- ${(runtimeState.completedFields || []).length} verified fields`,
+		`- 0 final submission actions`,
+		"",
+		"Pending review:",
+		...(reviewCheckpoint.items || []).map((item, index) => `${index + 1}. ${item.fieldLabel.text} - ${item.type}`),
+		"",
+		"The browser remains open. No page actions will occur until you confirm the batch.",
+		"",
+	].join("\n");
+}
+
+function formatCheckpointItem(item) {
+	const lines = [
+		`[${item.id}] ${item.fieldLabel.text}`,
+		`Type: ${item.type}`,
+		`Current state: ${formatCurrentState(item.fieldState.currentValue)}`,
+		`Agent assessment: ${item.assessment}`,
+	];
+	if (item.proposedValue) lines.push(`Suggested answer: ${item.proposedValue}`);
+	if (item.options && item.options.length) {
+		lines.push("Options:");
+		item.options.forEach((option, index) => lines.push(`[${index + 1}] ${option.label}`));
+	}
+	return `${lines.join("\n")}\n`;
+}
+
+function promptForItem(item) {
+	if (item.type === REVIEW_TYPES.CONSENT_AUTHORIZATION) return "[A]uthorize [D]ecline [Q]uit > ";
+	if (item.type === REVIEW_TYPES.CONFIRM_PROPOSED_VALUE) return "[C]onfirm [R]eplace [S]kip [Q]uit > ";
+	if (item.type === REVIEW_TYPES.OPTION_SELECTION) return "Option number, [P]refer not, [S]kip, [Q]uit > ";
+	if (item.type === REVIEW_TYPES.FILE_REQUIRED) return "[F]ile path [S]kip [Q]uit > ";
+	return "[I]nput value [S]kip [Q]uit > ";
+}
+
+function formatDecisionSummary(reviewCheckpoint, decisions) {
+	const lines = ["", "Review decisions", ""];
+	for (const decision of decisions) {
+		const item = (reviewCheckpoint.items || []).find((candidate) => candidate.id === decision.itemId);
+		if (!item) continue;
+		lines.push(`${item.id}. ${item.fieldLabel.text}: ${decision.action}`);
+	}
+	lines.push("");
+	return lines.join("\n");
+}
+
+function formatCurrentState(value) {
+	if (Array.isArray(value)) return value.length ? value.join(", ") : "Empty";
+	if (value === true) return "Selected";
+	if (value === false) return "Not selected";
+	return value ? String(value) : "Empty";
+}
+
 function buildPromptText(reviewPrompt) {
 	const lines = [
 		"Review required:",
@@ -151,6 +312,7 @@ function buildCompactRunArtifact({ url, profilePath, resumePath, coverLetterPath
 		status: result.productStatus || normalizeProductStatus(result),
 		internalStatus: result.status,
 		reason: result.reason || "",
+		pendingReviewCheckpoint: runtimeState.pendingReviewCheckpoint ? summarizeCheckpoint(runtimeState.pendingReviewCheckpoint) : null,
 		profilePath,
 		configuredDocuments: {
 			resume: Boolean(resumePath),
@@ -194,6 +356,28 @@ function buildCompactRunArtifact({ url, profilePath, resumePath, coverLetterPath
 	};
 }
 
+function summarizeCheckpoint(checkpoint) {
+	return {
+		id: checkpoint.id,
+		status: checkpoint.status,
+		reason: checkpoint.reason,
+		pageUrl: checkpoint.pageUrl,
+		pageTitle: checkpoint.pageTitle,
+		items: (checkpoint.items || []).map((item) => ({
+			id: item.id,
+			type: item.type,
+			fieldFingerprint: item.fieldFingerprint,
+			fieldLabel: item.fieldLabel,
+			controlType: item.controlType,
+			fieldIntent: item.fieldIntent,
+			reasonCode: item.reasonCode,
+			allowedActions: item.allowedActions,
+			options: item.options,
+			metadata: item.metadata,
+		})),
+	};
+}
+
 function buildRunMetrics({ runtimeState }) {
 	const completedFields = Array.isArray(runtimeState.completedFields) ? runtimeState.completedFields : [];
 	const skippedFields = Array.isArray(runtimeState.skippedFields) ? runtimeState.skippedFields : [];
@@ -228,6 +412,8 @@ if (require.main === module) {
 module.exports = {
 	buildCompactRunArtifact,
 	createCliReviewAnswerProvider,
+	createCliReviewCheckpointProvider,
 	createReviewAnswerProvider,
+	createReviewCheckpointProvider,
 	normalizeProductStatus,
 };

@@ -29,12 +29,19 @@ function determineNextAction(semanticPage, profile, options = {}) {
 		};
 	}
 
-	const blockingReviewItem = findBlockingReviewItem(plan.reviewItems);
-	if (blockingReviewItem) {
+	const blockingReviewItems = findBlockingReviewItems(plan.reviewItems);
+	if (blockingReviewItems.length) {
+		const primaryReviewItem = blockingReviewItems[0];
 		return {
 			type: "needs-review",
-			reason: "required-field-needs-review",
-			details: blockingReviewItem,
+			reason: "required-review-checkpoint",
+			details: {
+				...primaryReviewItem,
+				reviewItems: blockingReviewItems,
+				reason: "required-review-items-block-navigation",
+				pageUrl: semanticPage.url,
+				pageTitle: semanticPage.title,
+			},
 			context: { adaptiveReasoning, matches, plan },
 		};
 	}
@@ -56,10 +63,10 @@ function determineNextAction(semanticPage, profile, options = {}) {
 	};
 }
 
-function findBlockingReviewItem(reviewItems) {
+function findBlockingReviewItems(reviewItems) {
 	const requiredReviewItems = (reviewItems || []).filter((item) => item.field && item.field.required);
-	return requiredReviewItems.find((item) => item.safetyDecision && item.safetyDecision.requiresReview)
-		|| requiredReviewItems[0];
+	const blocking = requiredReviewItems.filter((item) => item.safetyDecision && item.safetyDecision.requiresReview);
+	return blocking.length ? blocking : requiredReviewItems;
 }
 
 function buildAdaptiveDecision(adaptiveReasoning) {
