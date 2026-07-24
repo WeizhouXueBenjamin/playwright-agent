@@ -1,4 +1,5 @@
 const { resolveFieldLocator } = require("./locator");
+const { selectCustomOption } = require("./selection-options");
 
 async function selectOption(page, step) {
 	if (step.field.kind === "radio") {
@@ -16,6 +17,8 @@ async function selectOption(page, step) {
 
 	const { locator, strategy } = await resolveFieldLocator(page, step.field);
 	const value = String(step.actionValue);
+	const nativeSelect = await locator.evaluate((element) => element.tagName.toLowerCase() === "select");
+	if (!nativeSelect) return selectCustomOption(page, step.field, value, step.profileProperty && step.profileProperty.selectionContext);
 	const option = await findMatchingOption(locator, value);
 
 	if (!option) {

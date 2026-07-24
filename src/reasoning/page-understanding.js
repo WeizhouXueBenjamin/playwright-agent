@@ -42,6 +42,9 @@ function buildSemanticElement(element) {
 		options: element.options,
 		bounds: element.bounds,
 		semanticPath: element.semanticPath,
+		domId: element.idAttribute || "",
+		name: element.name || "",
+		ariaLabelledBy: element.ariaLabelledBy || "",
 		evidence: {
 			namePresent: Boolean(element.name),
 			idPresent: Boolean(element.idAttribute),

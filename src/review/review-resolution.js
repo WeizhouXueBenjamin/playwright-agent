@@ -4,13 +4,14 @@ const EXPLICIT_REVIEW_SOURCE = "explicit-user-review";
 const CURRENT_RUN_SCOPE = "current-run";
 
 function buildFieldFingerprint(field = {}) {
+	const stableDomIdentity = field.domId || field.name || field.ariaLabelledBy || "";
 	const input = {
-		id: field.id || "",
+		stableDomIdentity: stableDomIdentity || field.id || "",
 		kind: field.kind || "",
+		role: field.role || "",
 		label: field.label && field.label.text || "",
 		placeholder: field.placeholder || "",
 		inputType: field.inputType || "",
-		options: (field.options || []).map((option) => option.label || option.value || ""),
 		statementFingerprint: getStatementFingerprint(field),
 	};
 	return crypto.createHash("sha1").update(JSON.stringify(input)).digest("hex");
@@ -98,6 +99,7 @@ function buildReviewAnswer(input = {}, date = new Date()) {
 		safetyReasonResolved: input.safetyReasonResolved || reviewPrompt.safetyReason || safetyDecision.reason || reviewItem.reason || "review-required",
 		reusePolicy: input.reusePolicy || "do-not-reuse",
 		statementFingerprint,
+		authorization: input.authorization || null,
 		optionsSnapshot: input.optionsSnapshot || reviewPrompt.options || snapshotOptions(field.options || []),
 	});
 }
@@ -144,7 +146,19 @@ function sanitizeReviewAnswer(answer) {
 		safetyReasonResolved: answer.safetyReasonResolved,
 		reusePolicy: answer.reusePolicy || "do-not-reuse",
 		statementFingerprint: answer.statementFingerprint || "",
+		authorization: sanitizeAuthorization(answer.authorization),
 		optionsSnapshot: snapshotOptions(answer.optionsSnapshot || []),
+	};
+}
+
+function sanitizeAuthorization(authorization) {
+	if (!authorization || typeof authorization !== "object" || Array.isArray(authorization)) return null;
+	return {
+		authorizationType: authorization.authorizationType || "",
+		authorized: authorization.authorized === true,
+		consentScope: authorization.consentScope || "",
+		statementFingerprint: authorization.statementFingerprint || "",
+		authorizedAt: authorization.authorizedAt || "",
 	};
 }
 

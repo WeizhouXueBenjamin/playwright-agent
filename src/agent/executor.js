@@ -75,7 +75,7 @@ async function executePlanOnPage(page, plan, options = {}) {
 		try {
 			actionResult = await executeStep(page, gatedStep);
 			await waitForInteractionStable(page, options.interactionStability);
-			verification = await verifyAction(page, gatedStep);
+			verification = await verifyAction(page, gatedStep, actionResult);
 		} catch (error) {
 			verification = buildVerificationFailure(error);
 		}

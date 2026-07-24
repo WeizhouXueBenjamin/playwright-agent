@@ -1,7 +1,8 @@
 const { resolveFieldLocator } = require("../actions/locator");
+const { verifyCustomSelection } = require("../actions/selection-options");
 const { buildVerificationResultContract } = require("../contracts/verification-result");
 
-async function verifyAction(page, step) {
+async function verifyAction(page, step, actionResult = {}) {
 	if (step.action === "click") {
 		return buildVerificationResult(true, "click-dispatched", "click-dispatched", "action-result");
 	}
@@ -22,8 +23,13 @@ async function verifyAction(page, step) {
 			return buildVerificationResult(actual === true, expected, actual ? expected : "", `radio-label:${expected}`);
 		}
 
-		const actual = await locator.inputValue();
 		const expected = String(step.actionValue);
+		const nativeSelect = await locator.evaluate((element) => element.tagName.toLowerCase() === "select");
+		if (!nativeSelect) {
+			const custom = await verifyCustomSelection(locator, expected, actionResult.selectedOptionLabel || "");
+			return buildVerificationResult(custom.matched, expected, custom.actual, strategy);
+		}
+		const actual = await locator.inputValue();
 		const matched = actual === expected || await selectedOptionTextMatches(locator, expected);
 		return buildVerificationResult(matched, expected, actual, strategy);
 	}

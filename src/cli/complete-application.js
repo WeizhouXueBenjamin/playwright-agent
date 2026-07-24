@@ -15,11 +15,6 @@ async function main() {
 		throw new Error("Usage: npm run apply -- <url> [profile.json] [resume] [cover-letter]");
 	}
 
-	const reviewAnswerProvider = createReviewAnswerProvider({
-		input: process.stdin,
-		output: process.stdout,
-		errorOutput: process.stderr,
-	});
 	const reviewCheckpointProvider = createReviewCheckpointProvider({
 		input: process.stdin,
 		output: process.stdout,
@@ -31,7 +26,6 @@ async function main() {
 		headless: false,
 		persistent: true,
 		userDataDir: path.resolve(".playwright", "apply-profile"),
-		reviewAnswerProvider,
 		reviewCheckpointProvider,
 	});
 	const result = await agent.completeJobApplication({
@@ -54,13 +48,6 @@ async function main() {
 
 	console.error(`Run artifact: ${artifactPath}`);
 	console.log(JSON.stringify(result, null, 2));
-}
-
-function createReviewAnswerProvider(options = {}) {
-	if (!options.input || options.input.isTTY !== true || !options.output || options.output.isTTY !== true) {
-		return null;
-	}
-	return createCliReviewAnswerProvider(options);
 }
 
 function createReviewCheckpointProvider(options = {}) {
@@ -111,6 +98,25 @@ async function parseItemDecision({ rl, item, command, errorOutput }) {
 	if (normalized === "q" || normalized === "stop") return { action: "stop" };
 
 	if (item.type === REVIEW_TYPES.CONSENT_AUTHORIZATION) {
+		if ((item.options || []).length) {
+			const optionIndex = Number(normalized);
+			if (Number.isInteger(optionIndex) && optionIndex >= 1 && optionIndex <= item.options.length) {
+				const selectedOption = item.options[optionIndex - 1];
+				const confirm = (await rl.question(`Authorize selecting "${selectedOption.label}" for this exact current statement and run? [y/N] `)).trim().toLowerCase();
+				if (confirm === "y" || confirm === "yes") return { action: "authorize", value: selectedOption.label };
+				return null;
+			}
+			if (normalized === "m" || normalized === "manual") return askForManualCompletion(rl, errorOutput);
+			if (normalized === "d" || normalized === "decline") return { action: "decline" };
+			errorOutput.write(`Choose an option number from 1 to ${item.options.length}, M, D, or Q.\n`);
+			return null;
+		}
+		if (item.controlType === "selection") {
+			if (normalized === "m" || normalized === "manual") return askForManualCompletion(rl, errorOutput);
+			if (normalized === "d" || normalized === "decline") return { action: "decline" };
+			errorOutput.write("Options could not be safely inspected. Choose M, D, or Q.\n");
+			return null;
+		}
 		if (normalized === "a" || normalized === "authorize") {
 			const confirm = (await rl.question("Authorize this exact current statement for this run? [y/N] ")).trim().toLowerCase();
 			if (confirm === "y" || confirm === "yes") return { action: "authorize" };
@@ -128,7 +134,8 @@ async function parseItemDecision({ rl, item, command, errorOutput }) {
 			return value ? { action: "replace", value } : null;
 		}
 		if (normalized === "s" || normalized === "skip") return { action: "skip" };
-		errorOutput.write("Choose C, R, S, or Q.\n");
+		if (normalized === "m" || normalized === "manual") return askForManualCompletion(rl, errorOutput);
+		errorOutput.write("Choose C, R, M, S, or Q.\n");
 		return null;
 	}
 
@@ -139,7 +146,8 @@ async function parseItemDecision({ rl, item, command, errorOutput }) {
 		}
 		if (normalized === "p" || normalized === "prefer-not-to-answer") return { action: "prefer-not-to-answer" };
 		if (normalized === "s" || normalized === "skip") return { action: "skip" };
-		errorOutput.write("Choose an option number, P, S, or Q.\n");
+		if (normalized === "m" || normalized === "manual") return askForManualCompletion(rl, errorOutput);
+		errorOutput.write("Choose an option number, P, M, S, or Q.\n");
 		return null;
 	}
 
@@ -149,7 +157,8 @@ async function parseItemDecision({ rl, item, command, errorOutput }) {
 			return value ? { action: "provide-file", value } : null;
 		}
 		if (normalized === "s" || normalized === "skip") return { action: "skip" };
-		errorOutput.write("Choose F, S, or Q.\n");
+		if (normalized === "m" || normalized === "manual") return askForManualCompletion(rl, errorOutput);
+		errorOutput.write("Choose F, M, S, or Q.\n");
 		return null;
 	}
 
@@ -158,59 +167,15 @@ async function parseItemDecision({ rl, item, command, errorOutput }) {
 		return value ? { action: "provide-value", value } : null;
 	}
 	if (normalized === "s" || normalized === "skip") return { action: "skip" };
-	errorOutput.write("Choose I, S, or Q.\n");
+	if (normalized === "m" || normalized === "manual") return askForManualCompletion(rl, errorOutput);
+	errorOutput.write("Choose I, M, S, or Q.\n");
 	return null;
 }
 
-function createCliReviewAnswerProvider(options = {}) {
-	const input = options.input || process.stdin;
-	const output = options.output || process.stdout;
-	const errorOutput = options.errorOutput || process.stderr;
-	return async ({ reviewPrompt, page }) => {
-		const rl = readline.createInterface({
-			input,
-			output,
-		});
-		try {
-			errorOutput.write("\n");
-			errorOutput.write(`${reviewPrompt.question ? buildPromptText(reviewPrompt) : "Review required."}\n`);
-			while (true) {
-				const command = (await rl.question("[A]ccept [E]dit [S]kip [M]anual [Q]uit > ")).trim().toLowerCase();
-				if (command === "q" || command === "quit" || command === "/stop") {
-					return { command: "stop" };
-				}
-				if (command === "s" || command === "skip") {
-					return { command: "skip" };
-				}
-				if (command === "m" || command === "manual") {
-					errorOutput.write("Complete the field in the browser, then press Enter here to continue.\n");
-					await rl.question("");
-					if (page && typeof page.waitForTimeout === "function") await page.waitForTimeout(250);
-					return { command: "manual" };
-				}
-				if (command === "a" || command === "accept") {
-					if (!reviewPrompt.currentProfileValue) {
-						errorOutput.write("No suggestion is available to accept. Choose Edit, Skip, Manual, or Quit.\n");
-						continue;
-					}
-					const confirmation = (await rl.question(`Use "${reviewPrompt.currentProfileValue}" for this run? [y/N] `)).trim().toLowerCase();
-					if (confirmation === "y" || confirmation === "yes") {
-						return { command: "answer", answer: reviewPrompt.currentProfileValue, resolutionMethod: "user-confirmed" };
-					}
-					continue;
-				}
-				if (command === "e" || command === "edit") {
-					const answer = (await rl.question("Exact run-scoped answer > ")).trim();
-					if (answer) return { command: "answer", answer, resolutionMethod: "user-edited" };
-					errorOutput.write("Enter an answer, or choose another command.\n");
-					continue;
-				}
-				errorOutput.write("Choose A, E, S, M, or Q.\n");
-			}
-		} finally {
-			rl.close();
-		}
-	};
+async function askForManualCompletion(rl, errorOutput) {
+	errorOutput.write("Complete this field in the open browser, then press Enter here.\n");
+	await rl.question("");
+	return { action: "manual" };
 }
 
 function formatCheckpointSummary(reviewCheckpoint, runtimeState = {}) {
@@ -245,11 +210,17 @@ function formatCheckpointItem(item) {
 }
 
 function promptForItem(item) {
+	if (item.type === REVIEW_TYPES.CONSENT_AUTHORIZATION && (item.options || []).length) {
+		return "Option number, [M]anual, [D]ecline, [Q]uit > ";
+	}
+	if (item.type === REVIEW_TYPES.CONSENT_AUTHORIZATION && item.controlType === "selection") {
+		return "[M]anual [D]ecline [Q]uit > ";
+	}
 	if (item.type === REVIEW_TYPES.CONSENT_AUTHORIZATION) return "[A]uthorize [D]ecline [Q]uit > ";
-	if (item.type === REVIEW_TYPES.CONFIRM_PROPOSED_VALUE) return "[C]onfirm [R]eplace [S]kip [Q]uit > ";
-	if (item.type === REVIEW_TYPES.OPTION_SELECTION) return "Option number, [P]refer not, [S]kip, [Q]uit > ";
-	if (item.type === REVIEW_TYPES.FILE_REQUIRED) return "[F]ile path [S]kip [Q]uit > ";
-	return "[I]nput value [S]kip [Q]uit > ";
+	if (item.type === REVIEW_TYPES.CONFIRM_PROPOSED_VALUE) return "[C]onfirm [R]eplace [M]anual [S]kip [Q]uit > ";
+	if (item.type === REVIEW_TYPES.OPTION_SELECTION) return "Option number, [P]refer not, [M]anual, [S]kip, [Q]uit > ";
+	if (item.type === REVIEW_TYPES.FILE_REQUIRED) return "[F]ile path [M]anual [S]kip [Q]uit > ";
+	return "[I]nput value [M]anual [S]kip [Q]uit > ";
 }
 
 function formatDecisionSummary(reviewCheckpoint, decisions) {
@@ -270,30 +241,13 @@ function formatCurrentState(value) {
 	return value ? String(value) : "Empty";
 }
 
-function buildPromptText(reviewPrompt) {
-	const lines = [
-		"Review required:",
-		reviewPrompt.question,
-	];
-	if (reviewPrompt.options && reviewPrompt.options.length) {
-		lines.push("");
-		lines.push("Available answers:");
-		for (const option of reviewPrompt.options) lines.push(`- ${option.label}`);
-	}
-	lines.push("");
-	lines.push(reviewPrompt.message);
-	lines.push(reviewPrompt.minimumInputRequired);
-	if (reviewPrompt.currentProfileValue) lines.push("Accept uses the displayed suggestion only after confirmation.");
-	lines.push("The browser will stay open while this prompt waits.");
-	return lines.join("\n");
-}
-
 function normalizeProductStatus(result) {
 	const status = result.status || "";
 	const reason = result.reason || "";
 	if (status === "awaiting-human-confirmation") return "ready-for-review";
-	if (reason === "login-required" || status === "needs-user-confirmation") return "login-required";
+	if (reason === "login-required") return "login-required";
 	if (reason === "application-unavailable") return "application-unavailable";
+	if (status === "needs-user-confirmation") return "needs-review";
 	if (status === "needs-review") return "needs-review";
 	if (["recovery-failed", "verification-failed", "max-cycles-reached"].includes(status)) return "failed";
 	return status === "completed" ? "ready-for-review" : "failed";
@@ -411,9 +365,7 @@ if (require.main === module) {
 
 module.exports = {
 	buildCompactRunArtifact,
-	createCliReviewAnswerProvider,
 	createCliReviewCheckpointProvider,
-	createReviewAnswerProvider,
 	createReviewCheckpointProvider,
 	normalizeProductStatus,
 };

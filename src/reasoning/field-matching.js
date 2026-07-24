@@ -100,6 +100,7 @@ function matchDeterministicProfileValue(field, fieldAnswerSafety, profile) {
 				valuePresent: candidate.valuePresent,
 				value: candidate.value,
 				source: candidate.source,
+				selectionContext: candidate.selectionContext,
 			}
 			: null,
 		confidenceScore: allowed ? 100 : 0,
@@ -201,6 +202,7 @@ function selectBestCandidate(field, candidates, threshold, fieldAnswerSafety) {
 function getMatchableFields(semanticPage) {
 	return (semanticPage.interactiveElements || []).filter((element) => {
 		if (element.disabled || element.readonly) return false;
+		if (["listbox", "option"].includes(element.role)) return false;
 		if (!MATCHABLE_KINDS.has(element.kind)) return false;
 		return element.kind !== "button" && element.kind !== "link";
 	});
@@ -304,6 +306,12 @@ function describeField(field) {
 	return {
 		id: field.id,
 		kind: field.kind,
+		role: field.role || "",
+		tagName: field.tagName || "",
+		domId: field.domId || "",
+		name: field.name || "",
+		ariaLabelledBy: field.ariaLabelledBy || "",
+		semanticPath: field.semanticPath || [],
 		label: field.label,
 		labelCandidates: field.labelCandidates || [],
 		placeholder: field.placeholder || "",

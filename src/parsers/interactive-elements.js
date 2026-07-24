@@ -166,6 +166,7 @@ async function captureInteractiveElements(page) {
 		function getElementState(element) {
 			const tagName = element.tagName.toLowerCase();
 			const type = (element.getAttribute("type") || "").toLowerCase();
+			const role = element.getAttribute("role") || "";
 
 			if (type === "checkbox" || type === "radio") {
 				return { checked: Boolean(element.checked) };
@@ -176,6 +177,13 @@ async function captureInteractiveElements(page) {
 				return {
 					value: element.value,
 					selectedLabel: selected ? normalizeText(selected.label || selected.textContent || "") : "",
+				};
+			}
+
+			if (role === "combobox" || role === "listbox") {
+				return {
+					value: element.value || "",
+					selectedLabel: getCustomSelectionLabel(element),
 				};
 			}
 
@@ -197,6 +205,15 @@ async function captureInteractiveElements(page) {
 			}
 
 			return {};
+		}
+
+		function getCustomSelectionLabel(element) {
+			const explicitValue = normalizeText(element.getAttribute("aria-valuetext") || element.value || "");
+			if (explicitValue) return explicitValue;
+			const container = element.parentElement && element.parentElement.parentElement;
+			const containerText = normalizeText(container && container.innerText || "");
+			if (!containerText || /^select(\.{3})?$/i.test(containerText)) return "";
+			return containerText;
 		}
 
 		function getElementValidation(element) {
@@ -240,9 +257,9 @@ async function captureInteractiveElements(page) {
 			const type = (element.getAttribute("type") || "").toLowerCase();
 
 			if (type === "file") return "file-upload";
+			if (tagName === "select" || role === "combobox" || role === "listbox") return "selection";
 			if (tagName === "textarea" || role === "textbox" || ["email", "password", "search", "tel", "text", "url"].includes(type)) return "text-input";
 			if (["checkbox", "radio"].includes(type)) return type;
-			if (tagName === "select" || role === "combobox" || role === "listbox") return "selection";
 			if (tagName === "button" || role === "button" || ["button", "submit", "reset"].includes(type)) return "button";
 			if (tagName === "a" || role === "link") return "link";
 			if (element.isContentEditable) return "editable";

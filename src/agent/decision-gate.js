@@ -48,11 +48,13 @@ function validateActionProposal(input = {}) {
 			return review(safetyDecision.reason, step, semanticOwner, { safetyDecision, field: target });
 		}
 
-		const compatibility = validateSensitiveFieldValue({
-			intent: fieldIntent.fieldIntent,
-			value: step.actionValue,
-			field: target,
-		});
+		const compatibility = profileProperty.reviewAnswer && safetyDecision.valueCompatibility
+			? safetyDecision.valueCompatibility
+			: validateSensitiveFieldValue({
+				intent: fieldIntent.fieldIntent,
+				value: step.actionValue,
+				field: target,
+			});
 		if (sensitive && !compatibility.allowed) {
 			return review(compatibility.reason, step, semanticOwner, {
 				safetyDecision: { ...safetyDecision, valueCompatibility: compatibility },

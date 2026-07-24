@@ -8,3 +8,5 @@ benchmarks/
 reports/
 docs/
 fixtures/
+.playwright-cli/
+.agents/

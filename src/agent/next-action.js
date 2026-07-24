@@ -64,9 +64,14 @@ function determineNextAction(semanticPage, profile, options = {}) {
 }
 
 function findBlockingReviewItems(reviewItems) {
-	const requiredReviewItems = (reviewItems || []).filter((item) => item.field && item.field.required);
-	const blocking = requiredReviewItems.filter((item) => item.safetyDecision && item.safetyDecision.requiresReview);
-	return blocking.length ? blocking : requiredReviewItems;
+	return (reviewItems || []).filter((item) => {
+		return Boolean(item.field && item.field.required)
+			|| Boolean(item.safetyDecision && item.safetyDecision.requiresReview);
+	}).sort((left, right) => Number(requiresExplicitReview(right)) - Number(requiresExplicitReview(left)));
+}
+
+function requiresExplicitReview(item) {
+	return Boolean(item.safetyDecision && item.safetyDecision.requiresReview);
 }
 
 function buildAdaptiveDecision(adaptiveReasoning) {

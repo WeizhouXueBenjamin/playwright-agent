@@ -8,11 +8,11 @@ const REVIEW_TYPES = {
 };
 
 const REVIEW_ALLOWED_ACTIONS = {
-	[REVIEW_TYPES.CONSENT_AUTHORIZATION]: ["authorize", "decline", "stop"],
-	[REVIEW_TYPES.CONFIRM_PROPOSED_VALUE]: ["confirm", "replace", "skip", "stop"],
-	[REVIEW_TYPES.MANUAL_VALUE_REQUIRED]: ["provide-value", "skip", "stop"],
-	[REVIEW_TYPES.OPTION_SELECTION]: ["select", "prefer-not-to-answer", "skip", "stop"],
-	[REVIEW_TYPES.FILE_REQUIRED]: ["provide-file", "skip", "stop"],
+	[REVIEW_TYPES.CONSENT_AUTHORIZATION]: ["authorize", "manual", "decline", "stop"],
+	[REVIEW_TYPES.CONFIRM_PROPOSED_VALUE]: ["confirm", "replace", "manual", "skip", "stop"],
+	[REVIEW_TYPES.MANUAL_VALUE_REQUIRED]: ["provide-value", "manual", "skip", "stop"],
+	[REVIEW_TYPES.OPTION_SELECTION]: ["select", "prefer-not-to-answer", "manual", "skip", "stop"],
+	[REVIEW_TYPES.FILE_REQUIRED]: ["provide-file", "manual", "skip", "stop"],
 	[REVIEW_TYPES.FINAL_REVIEW]: ["keep-open", "finish-without-submit", "stop"],
 };
 

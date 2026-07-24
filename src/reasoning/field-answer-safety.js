@@ -207,6 +207,7 @@ function getReviewAnswerSafetyValue(fieldIntent, reviewAnswer, field) {
 	if (fieldIntent !== FIELD_INTENTS.LEGAL_DECLARATION && fieldIntent !== FIELD_INTENTS.PRIVACY_CONSENT) {
 		return reviewAnswer.answer;
 	}
+	if (reviewAnswer.authorization) return reviewAnswer.authorization;
 
 	const normalized = normalizeComparableText(reviewAnswer.answer);
 	const authorized = reviewAnswer.answer === true || ["yes", "true", "y", "agree", "i agree"].includes(normalized);

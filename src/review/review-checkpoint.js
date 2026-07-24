@@ -64,7 +64,9 @@ function buildReviewRequest({ reviewItem, checkpointId, index }) {
 		assessment: getAssessment({ type, prompt, field }),
 		evidence: (safetyDecision.evidence || []).map((item) => item.value || item).filter(Boolean).slice(0, 5),
 		metadata: getMetadata({ type, prompt }),
-		allowedActions: REVIEW_ALLOWED_ACTIONS[type],
+		optionSnapshotId: reviewItem.optionSnapshot && reviewItem.optionSnapshot.snapshotId || "",
+		optionsComplete: reviewItem.optionSnapshot ? reviewItem.optionSnapshot.complete === true : field.kind === "selection" ? false : true,
+		allowedActions: getAllowedActions({ type, field, prompt }),
 		status: "pending",
 		legacyPrompt: prompt,
 	};
@@ -83,12 +85,19 @@ function classifyReviewType({ reviewItem, prompt }) {
 
 function getProposedAction({ type, prompt, field }) {
 	if (type === REVIEW_TYPES.CONSENT_AUTHORIZATION) {
-		return { type: field.kind === "checkbox" ? "check" : "fill", value: true };
+		return { type: actionForField(field), value: field.kind === "checkbox" ? true : null };
 	}
 	if (type === REVIEW_TYPES.CONFIRM_PROPOSED_VALUE) {
 		return { type: actionForField(field), value: prompt.currentProfileValue };
 	}
 	return null;
+}
+
+function getAllowedActions({ type, field, prompt }) {
+	if (type === REVIEW_TYPES.CONSENT_AUTHORIZATION && field.kind === "selection" && !(prompt.options || []).length) {
+		return ["manual", "decline", "stop"];
+	}
+	return REVIEW_ALLOWED_ACTIONS[type];
 }
 
 function actionForField(field) {

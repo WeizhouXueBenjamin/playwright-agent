@@ -1,3 +1,6 @@
+const fs = require("node:fs");
+
+const { inspectSelectionOptions, resetCustomSelectionSearch } = require("../actions/selection-options");
 const { observePage } = require("./observer");
 const { runDecisionCycle } = require("./decision-cycle");
 const { launchChromium, launchPersistentChromiumContext } = require("../browser/browser");
@@ -8,7 +11,7 @@ const { RecoveryEngine } = require("../recovery/recovery-engine");
 const { gateStepForCurrentObservation } = require("./decision-gate");
 const { buildReviewCheckpoint } = require("../review/review-checkpoint");
 const { REVIEW_TYPES } = require("../review/review-types");
-const { buildFieldFingerprint, buildReviewAnswer, formatReviewPrompt, normalizeReviewPrompt } = require("../review/review-resolution");
+const { buildFieldFingerprint, buildReviewAnswer } = require("../review/review-resolution");
 const { StateManager } = require("../state/state-manager");
 
 class AgentController {
@@ -83,10 +86,10 @@ class AgentController {
 			};
 
 			if (terminalState.reached) {
-				if (terminalState.status === "needs-review" && isReviewCheckpointDetails(terminalState.details)) {
+				if (terminalState.status === "needs-review" && isReviewDetails(terminalState.details)) {
 					const checkpointResolution = await this.resolveReviewCheckpoint({
 						page,
-						checkpointDetails: terminalState.details,
+						checkpointDetails: normalizeCheckpointDetails(terminalState.details, terminalState.reason),
 						fallbackReason: terminalState.reason,
 						lifecycleEntry,
 						stateManager,
@@ -94,19 +97,6 @@ class AgentController {
 					});
 					if (checkpointResolution.continueRun) continue;
 					return checkpointResolution.result;
-				}
-
-				if (terminalState.status === "needs-review" && isFieldReviewItem(terminalState.details)) {
-					const reviewResolution = await this.resolveReview({
-						page,
-						reviewItem: terminalState.details || {},
-						fallbackReason: terminalState.reason,
-						lifecycleEntry,
-						stateManager,
-						lifecycle,
-					});
-					if (reviewResolution.continueRun) continue;
-					return reviewResolution.result;
 				}
 
 				stateManager.setExecutionStatus(terminalState.status);
@@ -142,9 +132,9 @@ class AgentController {
 					runtimeStateSnapshot: stateManager.getState(),
 				};
 				if (gateResult.type === "review-item") {
-					const reviewResolution = await this.resolveReview({
+					const reviewResolution = await this.resolveReviewCheckpoint({
 						page,
-						reviewItem: buildGateReviewItem(gateResult),
+						checkpointDetails: normalizeCheckpointDetails(buildGateReviewItem(gateResult), gateResult.reason),
 						fallbackReason: gateResult.reason,
 						lifecycleEntry: gateLifecycleEntry,
 						stateManager,
@@ -199,6 +189,24 @@ class AgentController {
 				if (recovery.status === "recovered") {
 					continue;
 				}
+				if (shouldSkipUnsupportedOptionalSelection(gateResult.step, recovery)) {
+					await resetCustomSelectionSearch(page, gateResult.step.field).catch(() => {});
+					stateManager.recordSkippedField({
+						fieldFingerprint: buildFieldFingerprint(gateResult.step.field),
+						fieldId: gateResult.step.field.id,
+						fieldIntent: "low-risk-optional-selection",
+						fieldLabel: gateResult.step.field.label,
+						controlType: gateResult.step.field.kind,
+					});
+					lifecycle[lifecycle.length - 1].recovery = summarizeRecovery({
+						...recovery,
+						status: "skipped",
+						strategy: "skip-unsupported-optional-selection",
+						message: "Optional selection had no unique compatible option and was skipped.",
+					});
+					lifecycle[lifecycle.length - 1].runtimeStateSnapshot = stateManager.getState();
+					continue;
+				}
 
 				const terminalStatus = recovery.status === "needs-user-confirmation"
 					? "needs-user-confirmation"
@@ -227,8 +235,9 @@ class AgentController {
 	}
 
 	async resolveReviewCheckpoint({ page, checkpointDetails, fallbackReason, lifecycleEntry, stateManager, lifecycle }) {
+		const reviewItems = await enrichReviewItemsWithOptions(page, checkpointDetails.reviewItems || []);
 		let checkpoint = buildReviewCheckpoint({
-			reviewItems: checkpointDetails.reviewItems || [],
+			reviewItems,
 			pageUrl: checkpointDetails.pageUrl || lifecycleEntry.url,
 			pageTitle: checkpointDetails.pageTitle || "",
 			reason: checkpointDetails.reason || fallbackReason,
@@ -328,132 +337,31 @@ class AgentController {
 		}
 	}
 
-	async resolveReview({ page, reviewItem, fallbackReason, lifecycleEntry, stateManager, lifecycle }) {
-		let reviewPrompt = normalizeReviewPrompt(reviewItem);
-		stateManager.recordReviewPrompt(reviewPrompt);
+}
 
-		if (typeof this.options.reviewAnswerProvider !== "function") {
-			stateManager.setExecutionStatus("needs-review");
-			const promptedLifecycleEntry = buildPromptedLifecycleEntry(lifecycleEntry, reviewPrompt, stateManager);
-			lifecycle.push(promptedLifecycleEntry);
-			return {
-				continueRun: false,
-				result: buildReviewResult({
-					status: "needs-review",
-					reason: fallbackReason || "review-channel-unavailable",
-					reviewPrompt,
-					stateManager,
-					lifecycle,
-				}),
-			};
+async function enrichReviewItemsWithOptions(page, reviewItems) {
+	const enriched = [];
+	for (const reviewItem of reviewItems) {
+		const field = reviewItem.field || {};
+		if (field.kind !== "selection" || (field.options || []).length) {
+			enriched.push(reviewItem);
+			continue;
 		}
-
-		while (true) {
-			stateManager.setExecutionStatus("review-pending");
-			const promptedState = stateManager.getState();
-			const promptedLifecycleEntry = buildPromptedLifecycleEntry(lifecycleEntry, reviewPrompt, stateManager);
-			const providedAnswer = await this.options.reviewAnswerProvider({
-				reviewPrompt,
-				reviewItem,
-				runtimeState: promptedState,
-				page,
+		try {
+			const snapshot = await inspectSelectionOptions(page, field);
+			enriched.push({
+				...reviewItem,
+				field: { ...field, options: snapshot.options },
+				optionSnapshot: snapshot,
 			});
-
-			if (providedAnswer === undefined || providedAnswer === null) {
-				stateManager.setExecutionStatus("needs-review");
-				lifecycle.push({
-					...promptedLifecycleEntry,
-					phase: "observe-think-review-channel-unavailable",
-					runtimeStateSnapshot: stateManager.getState(),
-				});
-				return {
-					continueRun: false,
-					result: buildReviewResult({
-						status: "needs-review",
-						reason: "review-channel-unavailable",
-						reviewPrompt,
-						stateManager,
-						lifecycle,
-					}),
-				};
-			}
-
-			const reviewCommand = typeof providedAnswer === "object" && !Array.isArray(providedAnswer)
-				? providedAnswer.command || "answer"
-				: "answer";
-			if (reviewCommand === "stop") {
-				stateManager.setExecutionStatus("needs-review");
-				lifecycle.push({
-					...promptedLifecycleEntry,
-					phase: "observe-think-review-stopped",
-					runtimeStateSnapshot: stateManager.getState(),
-				});
-				return {
-					continueRun: false,
-					result: buildReviewResult({
-						status: "needs-review",
-						reason: "stopped-by-user",
-						reviewPrompt,
-						stateManager,
-						lifecycle,
-					}),
-				};
-			}
-			if (reviewCommand === "skip") {
-				stateManager.recordSkippedField(reviewPrompt);
-				stateManager.setExecutionStatus("running");
-				lifecycle.push({
-					...promptedLifecycleEntry,
-					phase: "observe-think-review-skipped",
-					runtimeStateSnapshot: stateManager.getState(),
-				});
-				return { continueRun: true };
-			}
-			if (reviewCommand === "manual") {
-				const manualVerification = await verifyManualCompletion(page, reviewPrompt);
-				if (!manualVerification.ok) {
-					lifecycle.push({
-						...promptedLifecycleEntry,
-						phase: "observe-think-review-manual-unverified",
-						manualVerification,
-						runtimeStateSnapshot: stateManager.getState(),
-					});
-					reviewPrompt = {
-						...reviewPrompt,
-						message: `Manual completion was not verified (${manualVerification.reason}). ${reviewPrompt.message}`,
-					};
-					continue;
-				}
-				stateManager.recordManualCompletion(reviewPrompt);
-				stateManager.setExecutionStatus("running");
-				lifecycle.push({
-					...promptedLifecycleEntry,
-					phase: "observe-think-review-manual",
-					manualVerification,
-					runtimeStateSnapshot: stateManager.getState(),
-				});
-				return { continueRun: true };
-			}
-
-			const reviewAnswer = buildReviewAnswer({
-				...(typeof providedAnswer === "object" && !Array.isArray(providedAnswer)
-					? providedAnswer
-					: { answer: providedAnswer }),
-				reviewPrompt,
-				reviewItem,
+		} catch (error) {
+			enriched.push({
+				...reviewItem,
+				optionInspectionError: error.message,
 			});
-			stateManager.recordReviewAnswer(reviewAnswer);
-			stateManager.setExecutionStatus("running");
-			lifecycle.push({
-				...promptedLifecycleEntry,
-				phase: "observe-think-review-resolved",
-				reviewAnswer: summarizeReviewAnswer(reviewAnswer),
-				runtimeStateSnapshot: stateManager.getState(),
-			});
-			return { continueRun: true };
 		}
 	}
-
+	return enriched;
 }
 
 async function applyCheckpointDecisions({ page, checkpoint, decisions, stateManager }) {
@@ -465,18 +373,19 @@ async function applyCheckpointDecisions({ page, checkpoint, decisions, stateMana
 		};
 	}
 
+	for (const item of checkpoint.items || []) {
+		const decision = decisions.find((candidate) => candidate && candidate.itemId === item.id);
+		if (decision.action !== "manual") continue;
+		const manualVerification = await verifyManualCompletion(page, item.legacyPrompt);
+		if (!manualVerification.ok) {
+			return { recordedDecisions: [], stopReason: manualVerification.reason };
+		}
+	}
+
 	const recordedDecisions = [];
 	for (const item of checkpoint.items || []) {
-		const decision = decisions.find((candidate) => candidate && candidate.itemId === item.id)
-			|| { action: "skip" };
-		const recordedDecision = {
-			itemId: item.id,
-			fieldFingerprint: item.fieldFingerprint,
-			type: item.type,
-			action: decision.action,
-			resolutionMethod: resolutionMethodForDecision(decision),
-			decidedAt: new Date().toISOString(),
-		};
+		const decision = decisions.find((candidate) => candidate && candidate.itemId === item.id);
+		const recordedDecision = toRecordedDecision(item, decision);
 		recordedDecisions.push(recordedDecision);
 
 		if (decision.action === "stop") return { recordedDecisions, stopReason: "stopped-by-user" };
@@ -486,14 +395,21 @@ async function applyCheckpointDecisions({ page, checkpoint, decisions, stateMana
 			continue;
 		}
 		if (decision.action === "manual") {
-			const manualVerification = await verifyManualCompletion(page, item.legacyPrompt);
-			if (!manualVerification.ok) return { recordedDecisions, stopReason: manualVerification.reason };
 			stateManager.recordManualCompletion(item.legacyPrompt);
 			continue;
 		}
 		const answer = answerForDecision(item, decision);
+		const authorizedAt = new Date().toISOString();
 		const reviewAnswer = buildReviewAnswer({
 			answer,
+			authorizedAt,
+			authorization: decision.action === "authorize" ? {
+				authorizationType: "consent",
+				authorized: true,
+				consentScope: item.fieldIntent === "privacy-consent" ? "privacy-policy" : "legal-declaration",
+				statementFingerprint: item.statementFingerprint,
+				authorizedAt,
+			} : null,
 			resolutionMethod: recordedDecision.resolutionMethod,
 			reviewPrompt: item.legacyPrompt,
 			reviewItem: {
@@ -516,8 +432,33 @@ async function applyCheckpointDecisions({ page, checkpoint, decisions, stateMana
 function validateCheckpointDecisions(checkpoint, decisions) {
 	const recordedDecisions = [];
 	const checkpointItems = checkpoint.items || [];
+	const checkpointStop = (decisions || []).find((decision) => decision
+		&& decision.itemId === "__checkpoint"
+		&& decision.action === "stop");
+	if (checkpointStop) return { ok: false, reason: "stopped-by-user", recordedDecisions };
+	const itemStop = (decisions || []).find((decision) => decision && ["stop", "decline"].includes(decision.action));
+	if (itemStop) {
+		const item = checkpointItems.find((candidate) => candidate.id === itemStop.itemId);
+		if (!item) return { ok: false, reason: "review-decision-item-not-found", recordedDecisions };
+		if (!item.allowedActions.includes(itemStop.action)) {
+			return { ok: false, reason: "review-decision-action-not-allowed", recordedDecisions };
+		}
+		recordedDecisions.push(toRecordedDecision(item, itemStop));
+		return {
+			ok: false,
+			reason: itemStop.action === "decline" ? "consent-declined" : "stopped-by-user",
+			recordedDecisions,
+		};
+	}
+
+	const decisionsByItem = new Map();
 	for (const decision of decisions || []) {
-		if (!decision || !decision.itemId || decision.itemId === "__checkpoint") continue;
+		if (!decision || !decision.itemId) {
+			return { ok: false, reason: "review-decision-invalid", recordedDecisions };
+		}
+		if (decision.itemId === "__checkpoint") {
+			return { ok: false, reason: "review-decision-action-not-allowed", recordedDecisions };
+		}
 		const item = checkpointItems.find((candidate) => candidate.id === decision.itemId);
 		if (!item) {
 			recordedDecisions.push({
@@ -538,12 +479,71 @@ function validateCheckpointDecisions(checkpoint, decisions) {
 			});
 			return { ok: false, reason: "review-decision-action-not-allowed", recordedDecisions };
 		}
+		if (decisionsByItem.has(item.id)) {
+			return { ok: false, reason: "review-decision-duplicate", recordedDecisions };
+		}
+		const valueReason = validateDecisionValue(item, decision);
+		if (valueReason) return { ok: false, reason: valueReason, recordedDecisions };
+		decisionsByItem.set(item.id, decision);
+	}
+	for (const item of checkpointItems) {
+		if (!decisionsByItem.has(item.id)) {
+			return { ok: false, reason: "review-decision-missing", recordedDecisions };
+		}
 	}
 	return { ok: true, reason: "", recordedDecisions };
 }
 
+function validateDecisionValue(item, decision) {
+	if (decision.action === "authorize" && (item.options || []).length) {
+		if (!hasValue(decision.value)) return "review-decision-value-required";
+		if (!(item.options || []).some((option) => option.label === decision.value)) {
+			return "review-decision-option-not-available";
+		}
+	}
+	if (decision.action === "confirm" && !hasValue(item.proposedValue)) return "review-decision-proposed-value-missing";
+	if (["replace", "provide-value"].includes(decision.action) && !hasValue(decision.value || decision.answer)) {
+		return "review-decision-value-required";
+	}
+	if (decision.action === "select") {
+		if (!hasValue(decision.value)) return "review-decision-value-required";
+		if (!(item.options || []).some((option) => option.label === decision.value)) {
+			return "review-decision-option-not-available";
+		}
+	}
+	if (decision.action === "provide-file") {
+		if (!hasValue(decision.value)) return "review-decision-value-required";
+		try {
+			if (!fs.statSync(decision.value).isFile()) return "review-decision-file-not-found";
+		} catch {
+			return "review-decision-file-not-found";
+		}
+	}
+	if (decision.action === "prefer-not-to-answer" && !(item.metadata && item.metadata.allowPreferNotToAnswer)) {
+		return "review-decision-action-not-allowed";
+	}
+	return "";
+}
+
+function toRecordedDecision(item, decision) {
+	return {
+		itemId: item.id,
+		fieldFingerprint: item.fieldFingerprint,
+		type: item.type,
+		action: decision.action,
+		resolutionMethod: resolutionMethodForDecision(decision),
+		decidedAt: new Date().toISOString(),
+	};
+}
+
+function hasValue(value) {
+	return typeof value === "boolean" || String(value || "").trim().length > 0;
+}
+
 function answerForDecision(item, decision) {
-	if (item.type === REVIEW_TYPES.CONSENT_AUTHORIZATION && decision.action === "authorize") return true;
+	if (item.type === REVIEW_TYPES.CONSENT_AUTHORIZATION && decision.action === "authorize") {
+		return (item.options || []).length ? decision.value : true;
+	}
 	if (decision.action === "confirm") return item.proposedValue;
 	if (decision.action === "select") return decision.value;
 	return decision.value || decision.answer || "";
@@ -558,11 +558,20 @@ function resolutionMethodForDecision(decision = {}) {
 }
 
 function isRecoverableReviewStop(reason) {
-	return String(reason || "").startsWith("manual-field-");
+	return String(reason || "").startsWith("manual-field-")
+		|| String(reason || "").startsWith("review-decision-");
 }
 
-function isReviewCheckpointDetails(details) {
-	return Boolean(details && Array.isArray(details.reviewItems));
+function isReviewDetails(details) {
+	return Boolean(details && (Array.isArray(details.reviewItems) || isFieldReviewItem(details)));
+}
+
+function normalizeCheckpointDetails(details, fallbackReason) {
+	if (Array.isArray(details.reviewItems)) return details;
+	return {
+		reviewItems: [details],
+		reason: details.reason || fallbackReason || "review-required",
+	};
 }
 
 function buildGateReviewItem(gateResult) {
@@ -576,38 +585,6 @@ function buildGateReviewItem(gateResult) {
 
 function isFieldReviewItem(reviewItem) {
 	return Boolean(reviewItem && reviewItem.field && reviewItem.field.id);
-}
-
-function buildPromptedLifecycleEntry(lifecycleEntry, reviewPrompt, stateManager) {
-	return {
-		...lifecycleEntry,
-		reviewPrompt,
-		reviewPromptText: formatReviewPrompt(reviewPrompt),
-		runtimeStateSnapshot: stateManager.getState(),
-	};
-}
-
-function buildReviewResult({ status, reason, reviewPrompt, stateManager, lifecycle }) {
-	return {
-		status,
-		reason,
-		reviewPrompt,
-		reviewPromptText: formatReviewPrompt(reviewPrompt),
-		runtimeState: stateManager.getState(),
-		lifecycle,
-	};
-}
-
-function summarizeReviewAnswer(reviewAnswer) {
-	return {
-		fieldIntent: reviewAnswer.fieldIntent,
-		fieldFingerprint: reviewAnswer.fieldFingerprint,
-		source: reviewAnswer.source,
-		scope: reviewAnswer.scope,
-		resolutionMethod: reviewAnswer.resolutionMethod,
-		authorizedAt: reviewAnswer.authorizedAt,
-		safetyReasonResolved: reviewAnswer.safetyReasonResolved,
-	};
 }
 
 async function verifyManualCompletion(page, reviewPrompt) {
@@ -641,6 +618,15 @@ function summarizeRecovery(recovery) {
 		message: recovery.message || "",
 		retryAttempt: recovery.retryAttempt || 0,
 	};
+}
+
+function shouldSkipUnsupportedOptionalSelection(step, recovery) {
+	if (!step || step.action !== "select-option" || step.field && step.field.required) return false;
+	const errors = [
+		recovery && recovery.failure && recovery.failure.verification && recovery.failure.verification.error,
+		recovery && recovery.actionResult && recovery.actionResult.verification && recovery.actionResult.verification.error,
+	].filter(Boolean);
+	return errors.length > 0 && errors.every((error) => /compatible live option|selectable option matched/i.test(String(error)));
 }
 
 function summarizeGateResult(gateResult) {

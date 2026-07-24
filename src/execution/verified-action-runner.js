@@ -50,7 +50,7 @@ async function runVerifiedAction(input) {
 	return {
 		step,
 		action,
-		verification: await verifyAction(page, step),
+		verification: await verifyAction(page, step, action),
 	};
 }
 

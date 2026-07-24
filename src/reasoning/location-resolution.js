@@ -50,7 +50,7 @@ function resolveLocationProfileProperty(field, profile = {}) {
 	const value = firstPresent(values[intent] || []);
 	if (!value) return null;
 
-	return {
+	const result = {
 		path: getLocationPath(intent, profile, location),
 		value,
 		valueType: typeof value,
@@ -58,6 +58,9 @@ function resolveLocationProfileProperty(field, profile = {}) {
 		locationIntent: intent,
 		source: "structured-location",
 	};
+	const country = firstPresent([location.country, profile.country]);
+	if (intent === LOCATION_INTENTS.CITY && country) result.selectionContext = { country };
+	return result;
 }
 
 function getLocationPath(intent, profile, location) {
