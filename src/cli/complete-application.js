@@ -297,6 +297,9 @@ function buildCompactRunArtifact({ url, profilePath, resumePath, coverLetterPath
 				cycle: entry.cycle,
 				category: "verification-failed",
 				reason: entry.actionResult.verification.reason || "verification failed",
+				field: entry.actionResult.step && entry.actionResult.step.field && entry.actionResult.step.field.label || null,
+				controlType: entry.actionResult.step && entry.actionResult.step.field && entry.actionResult.step.field.kind || "",
+				optionMatch: summarizeOptionMatch(entry.actionResult.verification.optionMatch),
 			})),
 		safetyStops: decisionGateResults
 			.filter((gate) => gate.type === "review-item" || String(gate.reason || "").includes("safety"))
@@ -327,7 +330,21 @@ function summarizeCheckpoint(checkpoint) {
 			reasonCode: item.reasonCode,
 			allowedActions: item.allowedActions,
 			options: item.options,
+			optionMatch: item.optionMatch || null,
 			metadata: item.metadata,
+		})),
+	};
+}
+
+function summarizeOptionMatch(optionMatch) {
+	if (!optionMatch) return null;
+	return {
+		tier: optionMatch.tier || "",
+		reason: optionMatch.reason || "",
+		candidateCount: optionMatch.candidateCount || 0,
+		candidates: (optionMatch.candidates || []).slice(0, 3).map((candidate) => ({
+			label: candidate.label || "",
+			score: candidate.score,
 		})),
 	};
 }

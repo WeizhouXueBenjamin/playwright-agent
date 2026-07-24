@@ -101,6 +101,7 @@ function matchDeterministicProfileValue(field, fieldAnswerSafety, profile) {
 				value: candidate.value,
 				source: candidate.source,
 				selectionContext: candidate.selectionContext,
+				requiresSponsorship: candidate.requiresSponsorship,
 			}
 			: null,
 		confidenceScore: allowed ? 100 : 0,
@@ -144,8 +145,6 @@ function matchDefaultReferralSourceOption(field, fieldAnswerSafety, referralSour
 }
 
 function matchExplicitReviewAnswer(field, fieldAnswerSafety, runtimeState) {
-	if (fieldAnswerSafety.riskLevel !== "high") return null;
-
 	const reviewAnswer = findReviewAnswerForField(field, fieldAnswerSafety.fieldIntent, runtimeState);
 	if (!reviewAnswer) return null;
 

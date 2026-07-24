@@ -1,3 +1,5 @@
+const { resolveOption } = require("../actions/option-resolver");
+
 function resolveWorkEligibilityProfileProperty(field = {}, profile = {}) {
 	const fieldText = getPrimaryFieldText(field);
 	if (!/\b(work eligibility|work authorization|right to work|authorized to work|eligible to work)\b/.test(fieldText)) return null;
@@ -5,7 +7,9 @@ function resolveWorkEligibilityProfileProperty(field = {}, profile = {}) {
 	const rawValue = profile.workAuthorization;
 	if (rawValue === undefined || rawValue === null || String(rawValue).trim() === "") return null;
 
-	const value = resolveWorkEligibilityValue(rawValue, field);
+	const value = resolveWorkEligibilityValue(rawValue, field, {
+		requiresSponsorship: getRequiresSponsorship(profile),
+	});
 	if (!value) return null;
 
 	return {
@@ -15,12 +19,13 @@ function resolveWorkEligibilityProfileProperty(field = {}, profile = {}) {
 		valuePresent: true,
 		source: "deterministic-work-eligibility",
 		rawProfileValue: rawValue,
+		requiresSponsorship: getRequiresSponsorship(profile),
 	};
 }
 
-function resolveWorkEligibilityValue(rawValue, field = {}) {
+function resolveWorkEligibilityValue(rawValue, field = {}, context = {}) {
 	const normalized = normalize(rawValue);
-	const optionMatch = matchAvailableOption(normalized, field.options || []);
+	const optionMatch = matchAvailableOption(normalized, field.options || [], context);
 	if (optionMatch) return optionMatch;
 
 	if (isBooleanQuestion(field)) {
@@ -32,30 +37,36 @@ function resolveWorkEligibilityValue(rawValue, field = {}) {
 	}
 
 	if (/\b(citizen|permanent resident|resident visa|permanent resident visa)\b/.test(normalized)) {
+		const controlledOption = matchAvailableOption(normalize("Citizen or Permanent Resident Visa"), field.options || [], context);
+		if (controlledOption) return controlledOption;
 		return "Citizen or Permanent Resident Visa";
 	}
-	if (/\b(open work visa|work visa|work permit)\b/.test(normalized)) return "Work Visa";
+	if (/\b(open work visa|work visa|work permit)\b/.test(normalized)) {
+		const controlledOption = matchAvailableOption(normalize("Work Visa"), field.options || [], context);
+		if (controlledOption) return controlledOption;
+		return "Work Visa";
+	}
 
 	return String(rawValue).trim();
 }
 
-function matchAvailableOption(normalizedValue, options) {
-	const enabledOptions = (options || []).filter((option) => !option.disabled);
-	const exact = enabledOptions.find((option) => {
-		return [option.label, option.value].map(normalize).some((text) => text && text === normalizedValue);
+function matchAvailableOption(normalizedValue, options, context = {}) {
+	const result = resolveOption(options, normalizedValue, {
+		fieldIntent: "work-authorization",
+		fieldLabel: "Work Eligibility",
+		profileProperty: {
+			path: "workAuthorization",
+			source: "deterministic-work-eligibility",
+		},
+		requiresSponsorship: context.requiresSponsorship,
 	});
-	if (exact) return exact.label || exact.value;
+	return result.status === "matched" ? result.optionLabel : "";
+}
 
-	if (/\b(citizen|permanent resident|resident visa)\b/.test(normalizedValue)) {
-		const resident = enabledOptions.find((option) => /citizen|permanent resident|resident visa/i.test(`${option.label || ""} ${option.value || ""}`));
-		if (resident) return resident.label || resident.value;
-	}
-	if (/\b(work visa|work permit)\b/.test(normalizedValue)) {
-		const workVisa = enabledOptions.find((option) => /work visa|work permit/i.test(`${option.label || ""} ${option.value || ""}`));
-		if (workVisa) return workVisa.label || workVisa.value;
-	}
-
-	return "";
+function getRequiresSponsorship(profile) {
+	if (profile.requiresSponsorship === true) return true;
+	if (profile.requiresSponsorship === false) return false;
+	return null;
 }
 
 function isBooleanQuestion(field) {

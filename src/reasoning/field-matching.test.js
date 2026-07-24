@@ -214,6 +214,24 @@ assert.equal(deterministicWorkEligibilityMatches[0].matchedProfileProperty.value
 assert.equal(deterministicWorkEligibilityMatches[0].matchedProfileProperty.source, "deterministic-work-eligibility");
 assert.equal(deterministicWorkEligibilityMatches[0].safetyDecision.allowed, true);
 
+const deterministicObservedWorkEligibilityMatches = matchFieldsToProfile({
+	interactiveElements: [
+		{
+			...createField("work-eligibility-options", "selection", "Work Eligibility*", "label", 0.98),
+			options: [
+				{ label: "Citizen or Permanent Resident" },
+				{ label: "Work Visa" },
+				{ label: "Not currently eligible to work" },
+			],
+		},
+	],
+}, {
+	workAuthorization: "New Zealand Permanent Resident visa",
+}, { threshold: 1 });
+assert.equal(deterministicObservedWorkEligibilityMatches[0].matchedProfileProperty.path, "workAuthorization");
+assert.equal(deterministicObservedWorkEligibilityMatches[0].matchedProfileProperty.value, "Citizen or Permanent Resident");
+assert.equal(deterministicObservedWorkEligibilityMatches[0].safetyDecision.allowed, true);
+
 const booleanWorkEligibilityMatches = matchFieldsToProfile({
 	interactiveElements: [
 		createField("work-auth", "radio", "Are you legally authorized to work in New Zealand?", "label", 0.98, "radio"),
@@ -387,6 +405,38 @@ assert.equal(reviewResolvedMatches[0].matchedProfileProperty.source, "explicit-u
 assert.equal(reviewResolvedMatches[0].matchedProfileProperty.value, "Yes");
 assert.equal(reviewResolvedMatches[0].safetyDecision.allowed, true);
 assert.equal(reviewResolvedMatches[0].safetyDecision.reason, "explicit-user-review-value-approved");
+
+const reviewedLocationField = {
+	...createField("candidate-location", "selection", "Location (City)*", "label", 0.98),
+	required: true,
+	role: "combobox",
+	domId: "candidate-location",
+	options: [
+		{ label: "Auckland, Auckland Region, New Zealand" },
+		{ label: "Auckland Airport, Auckland Region, New Zealand" },
+	],
+};
+const reviewedLocationAnswer = buildReviewAnswer({
+	fieldIntent: "low-risk",
+	fieldFingerprint: buildFieldFingerprint(reviewedLocationField),
+	fieldId: reviewedLocationField.id,
+	fieldLabel: reviewedLocationField.label,
+	answer: "Auckland, Auckland Region, New Zealand",
+	answerType: "selection",
+	safetyReasonResolved: "multiple-controlled-equivalence-candidates",
+	optionsSnapshot: reviewedLocationField.options,
+}, new Date("2026-07-24T00:00:00.000Z"));
+const reviewedLocationMatches = matchFieldsToProfile({
+	interactiveElements: [reviewedLocationField],
+}, {
+	city: "Auckland",
+	country: "New Zealand",
+}, {
+	threshold: 1,
+	runtimeState: { reviewAnswers: [reviewedLocationAnswer] },
+});
+assert.equal(reviewedLocationMatches[0].matchedProfileProperty.source, "explicit-user-review");
+assert.equal(reviewedLocationMatches[0].matchedProfileProperty.value, "Auckland, Auckland Region, New Zealand");
 
 const differentFieldMatches = matchFieldsToProfile({
 	interactiveElements: [{

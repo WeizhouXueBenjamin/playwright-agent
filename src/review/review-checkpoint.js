@@ -63,6 +63,7 @@ function buildReviewRequest({ reviewItem, checkpointId, index }) {
 		reason: prompt.message,
 		assessment: getAssessment({ type, prompt, field }),
 		evidence: (safetyDecision.evidence || []).map((item) => item.value || item).filter(Boolean).slice(0, 5),
+		optionMatch: sanitizeOptionMatch(safetyDecision.optionMatch),
 		metadata: getMetadata({ type, prompt }),
 		optionSnapshotId: reviewItem.optionSnapshot && reviewItem.optionSnapshot.snapshotId || "",
 		optionsComplete: reviewItem.optionSnapshot ? reviewItem.optionSnapshot.complete === true : field.kind === "selection" ? false : true,
@@ -114,9 +115,26 @@ function getAssessment({ type, prompt, field }) {
 			: "This field represents legal or privacy authorization.";
 	}
 	if (type === REVIEW_TYPES.MANUAL_VALUE_REQUIRED) return prompt.message;
+	if (type === REVIEW_TYPES.OPTION_SELECTION && prompt.safetyReason && prompt.safetyReason !== "review-required") {
+		return `Choose one of the observed options. Automatic matching was refused: ${prompt.safetyReason}.`;
+	}
 	if (type === REVIEW_TYPES.OPTION_SELECTION) return "Choose one of the observed options or skip when safe.";
 	if (type === REVIEW_TYPES.FILE_REQUIRED) return "A file is requested and must be explicitly configured or supplied by the user.";
 	return "Confirm or replace the proposed value before the agent uses it.";
+}
+
+function sanitizeOptionMatch(optionMatch) {
+	if (!optionMatch || typeof optionMatch !== "object") return null;
+	return {
+		status: optionMatch.status || "",
+		tier: optionMatch.tier || "",
+		reason: optionMatch.reason || "",
+		candidateCount: optionMatch.candidateCount || 0,
+		candidates: (optionMatch.candidates || []).slice(0, 3).map((candidate) => ({
+			label: candidate.label || "",
+			score: candidate.score,
+		})),
+	};
 }
 
 function getMetadata({ type, prompt }) {

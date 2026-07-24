@@ -26,11 +26,15 @@ async function verifyAction(page, step, actionResult = {}) {
 		const expected = String(step.actionValue);
 		const nativeSelect = await locator.evaluate((element) => element.tagName.toLowerCase() === "select");
 		if (!nativeSelect) {
-			const custom = await verifyCustomSelection(locator, expected, actionResult.selectedOptionLabel || "");
+			const custom = await verifyCustomSelection(
+				locator,
+				actionResult.selectedOptionLabel || "",
+				actionResult.selectedOptionValue || "",
+			);
 			return buildVerificationResult(custom.matched, expected, custom.actual, strategy);
 		}
-		const actual = await locator.inputValue();
-		const matched = actual === expected || await selectedOptionTextMatches(locator, expected);
+		const actual = await readNativeSelectedOption(locator);
+		const matched = exactNativeSelectionMatches(actual, actionResult);
 		return buildVerificationResult(matched, expected, actual, strategy);
 	}
 
@@ -49,11 +53,24 @@ async function verifyAction(page, step, actionResult = {}) {
 	return buildVerificationResult(actual === expected, expected, actual, strategy);
 }
 
-async function selectedOptionTextMatches(locator, expected) {
-	return locator.evaluate((element, expected) => {
+async function readNativeSelectedOption(locator) {
+	return locator.evaluate((element) => {
 		const selected = element.options[element.selectedIndex];
-		return selected ? selected.text.trim() === expected : false;
-	}, expected);
+		if (!selected) return { value: "", label: "", optionId: "" };
+		return {
+			value: selected.value,
+			label: String(selected.label || selected.textContent || "").trim(),
+			optionId: selected.id || selected.value || selected.label,
+		};
+	});
+}
+
+function exactNativeSelectionMatches(actual, actionResult) {
+	if (!actual || !actionResult) return false;
+	if (actionResult.selectedOptionValue !== undefined && actual.value !== actionResult.selectedOptionValue) return false;
+	if (actionResult.selectedOptionLabel !== undefined && actual.label !== actionResult.selectedOptionLabel) return false;
+	if (actionResult.selectedOptionId !== undefined && actionResult.selectedOptionId && actual.optionId !== actionResult.selectedOptionId) return false;
+	return Boolean(actionResult.selectedOptionValue !== undefined || actionResult.selectedOptionLabel !== undefined);
 }
 
 function buildVerificationResult(ok, expected, actual, locatorStrategy) {

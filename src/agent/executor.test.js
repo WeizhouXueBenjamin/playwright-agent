@@ -11,6 +11,7 @@ async function main() {
 
 	try {
 		await assertCompletedExecution(browser);
+		await assertNativeSelectUsesControlledOptionResolution(browser);
 		await assertStopsAfterFailure(browser);
 	} finally {
 		await browser.close();
@@ -40,6 +41,39 @@ async function assertCompletedExecution(browser) {
 	}
 }
 
+async function assertNativeSelectUsesControlledOptionResolution(browser) {
+	const { context, page } = await openPage(browser, createDialCodePageUrl());
+	try {
+		await waitForPageStable(page);
+
+		const plan = buildExecutionPlan([
+			createMatch(
+				"interactive-1",
+				"selection",
+				"Country",
+				"country",
+				"New Zealand",
+				94,
+				{
+					fieldOptions: [
+						{ label: "New Zealand +64", value: "+64" },
+						{ label: "Australia +61", value: "+61" },
+					],
+				},
+			),
+		]);
+
+		const result = await executePlanOnPage(page, plan);
+
+		assert.equal(result.status, "completed");
+		assert.equal(result.results[0].actionResult.selectedOptionLabel, "New Zealand +64");
+		assert.equal(result.results[0].verification.ok, true);
+		assert.equal(await page.getByLabel("Country").inputValue(), "+64");
+	} finally {
+		await context.close();
+	}
+}
+
 async function assertStopsAfterFailure(browser) {
 	const { context, page } = await openPage(browser, createTestPageUrl());
 	try {
@@ -63,7 +97,7 @@ async function assertStopsAfterFailure(browser) {
 	}
 }
 
-function createMatch(fieldId, kind, label, propertyPath, value, confidenceScore) {
+function createMatch(fieldId, kind, label, propertyPath, value, confidenceScore, options = {}) {
 	return {
 		field: {
 			id: fieldId,
@@ -72,16 +106,20 @@ function createMatch(fieldId, kind, label, propertyPath, value, confidenceScore)
 			labelCandidates: [{ text: label, source: "label", confidence: 0.98 }],
 			required: false,
 			inputType: kind === "checkbox" ? "checkbox" : "",
-			options: kind === "selection" ? [{ label: "New Zealand", valuePresent: true, disabled: false }] : [],
+			options: kind === "selection"
+				? options.fieldOptions || [{ label: "New Zealand", valuePresent: true, disabled: false }]
+				: [],
 		},
 		matchedProfileProperty: {
 			path: propertyPath,
 			value,
 			valueType: typeof value,
 			valuePresent: true,
+			source: options.source,
 		},
 		confidenceScore,
 		reasoning: `Matched ${label} to ${propertyPath}.`,
+		safetyDecision: options.safetyDecision,
 	};
 }
 
@@ -98,6 +136,26 @@ function createTestPageUrl() {
 		"<select id=\"country\" name=\"country\">",
 		"<option value=\"\">Select...</option>",
 		"<option>New Zealand</option>",
+		"</select>",
+		"</form>",
+		"</body>",
+		"</html>",
+	].join("");
+
+	return `data:text/html,${encodeURIComponent(html)}`;
+}
+
+function createDialCodePageUrl() {
+	const html = [
+		"<!doctype html>",
+		"<html>",
+		"<body>",
+		"<form>",
+		"<label for=\"country-code\">Country</label>",
+		"<select id=\"country-code\" name=\"countryCode\">",
+		"<option value=\"\">Select...</option>",
+		"<option value=\"+64\">New Zealand +64</option>",
+		"<option value=\"+61\">Australia +61</option>",
 		"</select>",
 		"</form>",
 		"</body>",

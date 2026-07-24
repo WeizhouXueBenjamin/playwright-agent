@@ -101,6 +101,7 @@ function withoutRawValue(profileProperty, options = {}) {
 	};
 	if (profileProperty.source) result.source = profileProperty.source;
 	if (profileProperty.selectionContext) result.selectionContext = profileProperty.selectionContext;
+	if (profileProperty.requiresSponsorship !== undefined) result.requiresSponsorship = profileProperty.requiresSponsorship;
 	if (profileProperty.scope) result.scope = profileProperty.scope;
 	if (profileProperty.reviewAnswer) result.reviewAnswer = profileProperty.reviewAnswer;
 	if (options.includePreview) result.valuePreview = previewValue(profileProperty.value);

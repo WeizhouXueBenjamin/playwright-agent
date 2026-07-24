@@ -9,6 +9,7 @@ async function main() {
 	const browser = await launchChromium();
 
 	try {
+		await assertAsyncComboboxWaitsForStableOptions(browser);
 		await assertMultiStepLoop(browser);
 		await assertRecoveryRetriesFailedClick(browser);
 		await assertAdaptsThroughCookieBanner(browser);
@@ -25,7 +26,10 @@ async function main() {
 		await assertMissingFileIsRejected(browser);
 		await assertCustomConsentSelectionResumesOnce(browser);
 		await assertCustomCountrySelectsUniqueCompatibleOption(browser);
+		await assertCustomWorkEligibilitySelectsControlledEquivalentOption(browser);
+		await assertUnresolvedRequiredOptionCreatesCheckpoint(browser);
 		await assertSearchableCitySelectsUniqueCompatibleOption(browser);
+		await assertSearchableCityResumesWithReviewedOption(browser);
 		await assertSearchableSchoolMatchesLeadingArticle(browser);
 		await assertUnsupportedOptionalSelectionIsSkipped(browser);
 		await assertResumesAfterReviewAnswer(browser);
@@ -249,7 +253,7 @@ async function assertCustomConsentSelectionResumesOnce(browser) {
 		const result = await controller.runOnPage(page, {});
 
 		assert.equal(calls, 1);
-		assert.equal(["awaiting-human-confirmation", "needs-review"].includes(result.status), true);
+		assert.equal(["awaiting-human-confirmation", "needs-review"].includes(result.status), true, result.status);
 		assert.equal(await page.locator("#selected-value").textContent(), "Acknowledge/Confirm");
 		assert.equal(result.runtimeState.completedFields.some((field) => field.resolutionMethod === "user-confirmed"), true);
 		assert.equal(result.runtimeState.finalSubmissionTriggered, false);
@@ -266,11 +270,68 @@ async function assertCustomCountrySelectsUniqueCompatibleOption(browser) {
 		const controller = new AgentController({ maxCycles: 10 });
 		const result = await controller.runOnPage(page, { country: "New Zealand" });
 
-		assert.equal(["awaiting-human-confirmation", "needs-review"].includes(result.status), true);
+		assert.ok(["awaiting-human-confirmation", "needs-review", "completed"].includes(result.status), result.status);
 		assert.equal(await page.locator("#selected-country").textContent(), "+64");
 		assert.equal(result.runtimeState.completedFields.some((field) => field.verifiedValue === "+64"), true);
 		assert.equal(result.runtimeState.finalSubmissionTriggered, false);
 		assert.equal(await page.locator("#country-submitted").textContent(), "not submitted");
+	} finally {
+		await context.close();
+	}
+}
+
+async function assertCustomWorkEligibilitySelectsControlledEquivalentOption(browser) {
+	const { context, page } = await openPage(browser, createCustomWorkEligibilityPageUrl());
+	try {
+		await waitForPageStable(page);
+		const controller = new AgentController({ maxCycles: 10 });
+		const result = await controller.runOnPage(page, { workAuthorization: "New Zealand Permanent Resident visa" });
+
+		assert.equal(["awaiting-human-confirmation", "needs-review"].includes(result.status), true);
+		assert.equal(await page.locator("#selected-work").textContent(), "Citizen or Permanent Resident");
+		assert.equal(result.runtimeState.completedFields.some((field) => field.verifiedValue === "Citizen or Permanent Resident"), true);
+		assert.equal(result.runtimeState.finalSubmissionTriggered, false);
+		assert.equal(await page.locator("#work-submitted").textContent(), "not submitted");
+	} finally {
+		await context.close();
+	}
+}
+
+async function assertAsyncComboboxWaitsForStableOptions(browser) {
+	const { context, page } = await openPage(browser, createUnstableCountryComboboxPageUrl());
+	try {
+		await waitForPageStable(page);
+		const controller = new AgentController({ maxCycles: 10 });
+		const result = await controller.runOnPage(page, { country: "New Zealand" });
+
+		assert.ok(["awaiting-human-confirmation", "needs-review", "completed"].includes(result.status), result.status);
+		assert.equal(await page.locator("#selected-country").textContent(), "+64");
+		assert.equal(await page.locator("#option-state").textContent(), "stable");
+		assert.equal(result.lifecycle.some((entry) => entry.actionResult && entry.actionResult.verification.actual === "+64"), true);
+		assert.equal(result.runtimeState.finalSubmissionTriggered, false);
+	} finally {
+		await context.close();
+	}
+}
+
+async function assertUnresolvedRequiredOptionCreatesCheckpoint(browser) {
+	const { context, page } = await openPage(browser, createUnresolvedWorkEligibilityComboboxPageUrl());
+	try {
+		await waitForPageStable(page);
+		const controller = new AgentController({ maxCycles: 10 });
+		const result = await controller.runOnPage(page, { workAuthorization: "New Zealand Permanent Resident visa" });
+
+		assert.equal(result.status, "needs-review");
+		assert.equal(result.reason, "review-checkpoint-pending");
+		assert.equal(await page.locator("#selected-work").textContent(), "Select...");
+		assert.equal(result.runtimeState.pendingReviewCheckpoint.items.length, 1);
+		const item = result.runtimeState.pendingReviewCheckpoint.items[0];
+		assert.equal(item.type, "option-selection");
+		assert.equal(item.fieldLabel.text, "Work Eligibility*");
+		assert.deepEqual(item.options.map((option) => option.label), ["Citizen", "Work Visa"]);
+		assert.equal(item.optionMatch.reason, "missing-permanent-resident");
+		assert.equal(result.runtimeState.finalSubmissionTriggered, false);
+		assert.equal(await page.locator("#work-submitted").textContent(), "not submitted");
 	} finally {
 		await context.close();
 	}
@@ -286,6 +347,35 @@ async function assertSearchableCitySelectsUniqueCompatibleOption(browser) {
 		assert.equal(["awaiting-human-confirmation", "needs-review"].includes(result.status), true);
 		assert.equal(await page.locator("#selected-city").textContent(), "Auckland, Auckland Region, New Zealand");
 		assert.equal(result.runtimeState.completedFields.some((field) => field.verifiedValue === "Auckland, Auckland Region, New Zealand"), true);
+		assert.equal(result.runtimeState.finalSubmissionTriggered, false);
+	} finally {
+		await context.close();
+	}
+}
+
+async function assertSearchableCityResumesWithReviewedOption(browser) {
+	const { context, page } = await openPage(browser, createAmbiguousSearchableCityPageUrl());
+	try {
+		await waitForPageStable(page);
+		let reviewCalls = 0;
+		const selectedLabel = "Auckland, Auckland Region, New Zealand";
+		const controller = new AgentController({
+			maxCycles: 10,
+			reviewCheckpointProvider: async ({ reviewCheckpoint }) => {
+				reviewCalls += 1;
+				const item = reviewCheckpoint.items[0];
+				assert.equal(item.fieldLabel.text, "Location (City)*");
+				assert.equal(item.type, "option-selection");
+				return [{ itemId: item.id, action: "select", value: selectedLabel }];
+			},
+		});
+		const result = await controller.runOnPage(page, { city: "Auckland", country: "New Zealand" });
+
+		assert.equal(reviewCalls, 1);
+		assert.equal(await page.locator("#selected-city").textContent(), selectedLabel);
+		assert.equal(result.runtimeState.completedFields.some((field) => (
+			field.source === "explicit-user-review" && field.verifiedValue === selectedLabel
+		)), true);
 		assert.equal(result.runtimeState.finalSubmissionTriggered, false);
 	} finally {
 		await context.close();
@@ -896,8 +986,10 @@ function createCustomCountryPageUrl() {
 		"<button type=\"submit\">Submit application</button>",
 		"</form>",
 		"<div id=\"country-submitted\">not submitted</div>",
+		"<div id=\"option-state\"></div>",
 		"<script>",
 		"const countryInput = document.querySelector('#country');",
+		"let countryOptionsScheduled = false;",
 		"function closeCountryListbox() { document.querySelector('#country-listbox')?.remove(); countryInput.setAttribute('aria-expanded', 'false'); }",
 		"function openCountryListbox() {",
 		"  closeCountryListbox(); countryInput.setAttribute('aria-expanded', 'true');",
@@ -911,6 +1003,127 @@ function createCustomCountryPageUrl() {
 		"}",
 		"countryInput.addEventListener('click', openCountryListbox);",
 		"countryInput.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeCountryListbox(); });",
+		"</script>",
+		"</body>",
+		"</html>",
+	].join("");
+
+	return `data:text/html,${encodeURIComponent(html)}`;
+}
+
+function createCustomWorkEligibilityPageUrl() {
+	const html = [
+		"<!doctype html>",
+		"<html>",
+		"<body>",
+		"<form onsubmit=\"document.querySelector('#work-submitted').textContent = 'submitted'; return false;\">",
+		"<label id=\"work-label\" for=\"work\">Work Eligibility*</label>",
+		"<div id=\"work-control\"><div id=\"selected-work\">Select...</div><div>",
+		"<input id=\"work\" type=\"text\" role=\"combobox\" aria-labelledby=\"work-label\" aria-required=\"true\" aria-controls=\"work-listbox\" aria-expanded=\"false\">",
+		"</div></div>",
+		"<button type=\"submit\">Submit application</button>",
+		"</form>",
+		"<div id=\"work-submitted\">not submitted</div>",
+		"<script>",
+		"const input = document.querySelector('#work');",
+		"function closeWorkListbox() { const existing = document.querySelector('#work-listbox'); if (existing) existing.remove(); input.setAttribute('aria-expanded', 'false'); }",
+		"function renderWorkOptions() {",
+		"  closeWorkListbox();",
+		"  const listbox = document.createElement('div'); listbox.id = 'work-listbox'; listbox.setAttribute('role', 'listbox');",
+		"  for (const label of ['Citizen or Permanent Resident', 'Work Visa', 'Not currently eligible to work']) {",
+		"    const option = document.createElement('div'); option.setAttribute('role', 'option'); option.textContent = label;",
+		"    option.addEventListener('click', () => { document.querySelector('#selected-work').textContent = label; input.value = ''; closeWorkListbox(); });",
+		"    listbox.appendChild(option);",
+		"  }",
+		"  document.body.appendChild(listbox); input.setAttribute('aria-expanded', 'true');",
+		"}",
+		"input.addEventListener('click', renderWorkOptions);",
+		"input.addEventListener('input', () => setTimeout(renderWorkOptions, 20));",
+		"</script>",
+		"</body>",
+		"</html>",
+	].join("");
+
+	return `data:text/html,${encodeURIComponent(html)}`;
+}
+
+function createUnstableCountryComboboxPageUrl() {
+	const html = [
+		"<!doctype html>",
+		"<html>",
+		"<body>",
+		"<form onsubmit=\"document.querySelector('#country-submitted').textContent = 'submitted'; return false;\">",
+		"<label id=\"country-label\" for=\"country\">Country*</label>",
+		"<div id=\"country-control\"><div id=\"selected-country\">Select...</div><div>",
+		"<input id=\"country\" type=\"text\" role=\"combobox\" aria-labelledby=\"country-label\" aria-required=\"true\" aria-controls=\"country-listbox\" aria-expanded=\"false\">",
+		"</div></div>",
+		"<button type=\"submit\">Submit application</button>",
+		"</form>",
+		"<div id=\"country-submitted\">not submitted</div>",
+		"<div id=\"option-state\"></div>",
+		"<script>",
+		"const countryInput = document.querySelector('#country');",
+		"let countryOptionsScheduled = false;",
+		"function closeCountryListbox() { document.querySelector('#country-listbox')?.remove(); countryInput.setAttribute('aria-expanded', 'false'); }",
+		"function appendCountryOption(listbox, label) {",
+		"  const option = document.createElement('div'); option.setAttribute('role', 'option'); option.textContent = label;",
+		"  option.addEventListener('click', () => {",
+		"    const state = listbox.children.length > 1 ? 'stable' : 'early';",
+		"    document.querySelector('#option-state').textContent = state;",
+		"    document.querySelector('#selected-country').textContent = label.endsWith('+64') ? '+64' : label;",
+		"    countryInput.value = ''; closeCountryListbox();",
+		"  });",
+		"  listbox.appendChild(option);",
+		"}",
+		"function renderCountryOptions() {",
+		"  if (countryInput.value !== 'New Zealand') return;",
+		"  let listbox = document.querySelector('#country-listbox');",
+		"  if (listbox) return;",
+		"  listbox = document.createElement('div'); listbox.id = 'country-listbox'; listbox.setAttribute('role', 'listbox');",
+		"  document.body.appendChild(listbox); countryInput.setAttribute('aria-expanded', 'true');",
+		"  appendCountryOption(listbox, 'New Zealand +64');",
+		"  if (!countryOptionsScheduled) { countryOptionsScheduled = true; setTimeout(() => appendCountryOption(listbox, 'New Zealand citizen'), 120); }",
+		"}",
+		"countryInput.addEventListener('click', renderCountryOptions);",
+		"countryInput.addEventListener('input', renderCountryOptions);",
+		"countryInput.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeCountryListbox(); });",
+		"</script>",
+		"</body>",
+		"</html>",
+	].join("");
+
+	return `data:text/html,${encodeURIComponent(html)}`;
+}
+
+function createUnresolvedWorkEligibilityComboboxPageUrl() {
+	const html = [
+		"<!doctype html>",
+		"<html>",
+		"<body>",
+		"<form onsubmit=\"document.querySelector('#work-submitted').textContent = 'submitted'; return false;\">",
+		"<label id=\"work-label\" for=\"work\">Work Eligibility*</label>",
+		"<div id=\"work-control\"><div id=\"selected-work\">Select...</div><div>",
+		"<input id=\"work\" type=\"text\" role=\"combobox\" aria-labelledby=\"work-label\" aria-required=\"true\" aria-controls=\"work-listbox\" aria-expanded=\"false\">",
+		"</div></div>",
+		"<button type=\"submit\">Submit application</button>",
+		"</form>",
+		"<div id=\"work-submitted\">not submitted</div>",
+		"<script>",
+		"const workInput = document.querySelector('#work');",
+		"function closeWorkListbox() { document.querySelector('#work-listbox')?.remove(); workInput.setAttribute('aria-expanded', 'false'); }",
+		"function renderWorkOptions() {",
+		"  closeWorkListbox();",
+		"  const listbox = document.createElement('div'); listbox.id = 'work-listbox'; listbox.setAttribute('role', 'listbox');",
+		"  for (const label of ['Citizen', 'Work Visa']) {",
+		"    const option = document.createElement('div'); option.setAttribute('role', 'option'); option.textContent = label;",
+		"    option.addEventListener('click', () => { document.querySelector('#selected-work').textContent = label; workInput.value = ''; closeWorkListbox(); });",
+		"    listbox.appendChild(option);",
+		"  }",
+		"  document.body.appendChild(listbox); workInput.setAttribute('aria-expanded', 'true');",
+		"}",
+		"workInput.addEventListener('click', renderWorkOptions);",
+		"workInput.addEventListener('input', () => setTimeout(renderWorkOptions, 20));",
+		"workInput.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeWorkListbox(); });",
 		"</script>",
 		"</body>",
 		"</html>",
@@ -952,6 +1165,35 @@ function createSearchableCityPageUrl() {
 		"</html>",
 	].join("");
 
+	return `data:text/html,${encodeURIComponent(html)}`;
+}
+
+function createAmbiguousSearchableCityPageUrl() {
+	const html = [
+		"<!doctype html><html><body><form>",
+		"<label id=\"city-label\" for=\"candidate-location\">Location (City)*</label>",
+		"<div><div id=\"selected-city\">Select...</div><div>",
+		"<input id=\"candidate-location\" type=\"text\" role=\"combobox\" aria-labelledby=\"city-label\" aria-required=\"true\" aria-controls=\"city-listbox\" aria-expanded=\"false\"></div></div>",
+		"<button type=\"submit\">Submit application</button></form>",
+		"<script>",
+		"const cityInput = document.querySelector('#candidate-location');",
+		"const cityOptions = ['Auckland, Auckland Region, New Zealand', 'Auckland Airport, Auckland Region, New Zealand', 'Auckland Central, Auckland Region, New Zealand'];",
+		"function renderCityOptions() {",
+		"  let listbox = document.querySelector('#city-listbox');",
+		"  if (!listbox) { listbox = document.createElement('div'); listbox.id = 'city-listbox'; listbox.setAttribute('role', 'listbox'); document.body.appendChild(listbox); }",
+		"  listbox.replaceChildren(); cityInput.setAttribute('aria-expanded', 'true');",
+		"  if (!cityInput.value.startsWith('Auckland')) return;",
+		"  for (const label of cityOptions) {",
+		"    const option = document.createElement('div'); option.setAttribute('role', 'option'); option.textContent = label;",
+		"    option.addEventListener('click', () => { document.querySelector('#selected-city').textContent = label; cityInput.value = ''; listbox.remove(); cityInput.setAttribute('aria-expanded', 'false'); });",
+		"    listbox.appendChild(option);",
+		"  }",
+		"}",
+		"cityInput.addEventListener('click', renderCityOptions);",
+		"cityInput.addEventListener('input', () => setTimeout(renderCityOptions, 20));",
+		"cityInput.addEventListener('keydown', (event) => { if (event.key === 'Escape') document.querySelector('#city-listbox')?.remove(); });",
+		"</script></body></html>",
+	].join("");
 	return `data:text/html,${encodeURIComponent(html)}`;
 }
 

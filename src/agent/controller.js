@@ -9,6 +9,7 @@ const { waitForPageStable } = require("../browser/stability");
 const { runVerifiedAction } = require("../execution/verified-action-runner");
 const { RecoveryEngine } = require("../recovery/recovery-engine");
 const { gateStepForCurrentObservation } = require("./decision-gate");
+const { classifyFieldIntent } = require("../reasoning/field-answer-safety");
 const { buildReviewCheckpoint } = require("../review/review-checkpoint");
 const { REVIEW_TYPES } = require("../review/review-types");
 const { buildFieldFingerprint, buildReviewAnswer } = require("../review/review-resolution");
@@ -173,6 +174,29 @@ class AgentController {
 			});
 
 			if (!actionResult.verification.ok) {
+				if (shouldCreateOptionReviewCheckpoint(gateResult.step, actionResult)) {
+					const optionReviewResolution = await this.resolveReviewCheckpoint({
+						page,
+						checkpointDetails: {
+							reviewItems: [await buildOptionReviewItem(page, gateResult.step, actionResult)],
+							reason: "option-match-needs-review",
+							pageUrl: observation.semanticPage.url,
+							pageTitle: observation.semanticPage.title,
+						},
+						fallbackReason: "option-match-needs-review",
+						lifecycleEntry: {
+							...lifecycleEntry,
+							phase: "observe-think-option-review",
+							actionResult,
+							decisionGate: summarizeGateResult(gateResult),
+						},
+						stateManager,
+						lifecycle,
+					});
+					if (optionReviewResolution.continueRun) continue;
+					return optionReviewResolution.result;
+				}
+
 				const recovery = await this.recoveryEngine.recover({
 					page,
 					profile,
@@ -362,6 +386,63 @@ async function enrichReviewItemsWithOptions(page, reviewItems) {
 		}
 	}
 	return enriched;
+}
+
+async function buildOptionReviewItem(page, step, actionResult) {
+	const snapshot = await inspectSelectionOptions(page, step.field).catch(() => null);
+	const optionMatch = actionResult.verification && actionResult.verification.optionMatch || {};
+	const fallbackOptions = (optionMatch.candidates || []).map((candidate) => ({
+		label: candidate.label,
+	})).filter((option) => option.label);
+	const field = snapshot
+		? { ...step.field, options: snapshot.options }
+		: { ...step.field, options: fallbackOptions };
+	const fieldIntent = classifyFieldIntent(field);
+	return {
+		field,
+		matchedProfileProperty: {
+			path: step.profileProperty && step.profileProperty.path || "",
+			valueType: typeof step.actionValue,
+			valuePresent: true,
+			valuePreview: redactOptionReviewValue(step, step.actionValue),
+			source: step.profileProperty && step.profileProperty.source || "",
+		},
+		reason: optionMatch.reason || "option-match-needs-review",
+		message: "The proposed answer did not resolve to one safe live option.",
+		confidenceScore: step.confidenceScore || 0,
+		safetyDecision: {
+			...(step.safetyDecision || {}),
+			fieldIntent: step.safetyDecision && step.safetyDecision.fieldIntent || fieldIntent.fieldIntent,
+			riskLevel: step.safetyDecision && step.safetyDecision.riskLevel || fieldIntent.riskLevel,
+			reason: optionMatch.reason || "option-match-needs-review",
+			optionMatch,
+			evidence: [
+				{ type: "option-match-tier", value: optionMatch.tier || "none" },
+				{ type: "option-match-reason", value: optionMatch.reason || "option-match-needs-review" },
+				...(optionMatch.candidates || []).map((candidate) => ({ type: "candidate", value: candidate.label })),
+			],
+		},
+		optionSnapshot: snapshot || {
+			snapshotId: "",
+			complete: false,
+			options: field.options || [],
+		},
+	};
+}
+
+function shouldCreateOptionReviewCheckpoint(step, actionResult) {
+	if (!step || step.action !== "select-option") return false;
+	const optionMatch = actionResult && actionResult.verification && actionResult.verification.optionMatch;
+	if (!optionMatch) return false;
+	if (step.field && step.field.required) return true;
+	const fieldIntent = step.safetyDecision && step.safetyDecision.fieldIntent || "";
+	return fieldIntent && fieldIntent !== "low-risk";
+}
+
+function redactOptionReviewValue(step, value) {
+	const fieldIntent = step.safetyDecision && step.safetyDecision.fieldIntent || "";
+	if (/salary|demographic|self-identification/i.test(fieldIntent)) return "[redacted]";
+	return String(value || "");
 }
 
 async function applyCheckpointDecisions({ page, checkpoint, decisions, stateManager }) {

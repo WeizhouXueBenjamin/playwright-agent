@@ -11,6 +11,7 @@ function buildVerificationResultContract(input) {
 	if (input.locatorStrategy) result.locatorStrategy = input.locatorStrategy;
 	if (input.error) result.error = input.error;
 	if (input.source) result.source = input.source;
+	if (input.optionMatch) result.optionMatch = sanitizeOptionMatch(input.optionMatch);
 
 	assertVerificationResultContract(result);
 	return result;
@@ -21,7 +22,23 @@ function buildVerificationFailure(error) {
 		ok: false,
 		error: error && error.message ? error.message : String(error),
 		source: "execution-error",
+		optionMatch: error && error.optionMatch,
 	});
+}
+
+function sanitizeOptionMatch(optionMatch) {
+	if (!optionMatch || typeof optionMatch !== "object") return null;
+	return {
+		status: optionMatch.status || "",
+		tier: optionMatch.tier || "",
+		reason: optionMatch.reason || "",
+		optionLabel: optionMatch.optionLabel || "",
+		candidateCount: optionMatch.candidateCount || 0,
+		candidates: (optionMatch.candidates || []).slice(0, 3).map((candidate) => ({
+			label: candidate.label || "",
+			score: candidate.score,
+		})),
+	};
 }
 
 function assertVerificationResultContract(result) {
