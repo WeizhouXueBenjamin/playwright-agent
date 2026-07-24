@@ -27,10 +27,6 @@ function buildBenchmarkReport(input) {
 		averageComponentConfidence: average(caseResults.map((result) => result.statistics.componentConfidence).filter((value) => value !== null)),
 		averageActionConfidence: average(caseResults.map((result) => result.statistics.actionConfidence).filter((value) => value !== null)),
 	};
-	const health = buildLightweightBenchmarkHealth(summary);
-	summary.healthScore = health.score;
-	summary.healthGrade = health.grade;
-
 	const report = {
 		schemaVersion: 1,
 		mode: "end-to-end-benchmark",
@@ -45,7 +41,6 @@ function buildBenchmarkReport(input) {
 		finishedAt,
 		durationMs,
 		summary,
-		health,
 		caseResults,
 		artifacts,
 	};
@@ -72,7 +67,7 @@ function buildCaseResult(input) {
 		name: benchmarkCase.name,
 		tags: benchmarkCase.tags,
 		status,
-		success: isSuccessful(status, executionReport),
+		success: isSuccessful(status, executionReport, benchmarkCase),
 		error: error ? { message: error.message, name: error.name } : null,
 		startedAt,
 		finishedAt,
@@ -99,9 +94,11 @@ function buildStatistics(validationReport, executionReport) {
 	};
 }
 
-function isSuccessful(status, executionReport) {
+function isSuccessful(status, executionReport, benchmarkCase = {}) {
 	if (status !== "completed") return false;
 	if (!executionReport) return false;
+	if (benchmarkCase.expectedStatus) return executionReport.status === benchmarkCase.expectedStatus;
+	if (benchmarkCase.expectedProductOutcome) return executionReport.productSuccessOutcome === benchmarkCase.expectedProductOutcome;
 	return ["awaiting-human-confirmation", "completed"].includes(executionReport.status);
 }
 

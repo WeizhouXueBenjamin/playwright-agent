@@ -14,9 +14,50 @@ function buildObservationStatePatch(previousState, observation, date = new Date(
 	return {
 		currentUrl: semanticPage.url,
 		currentPageTitle: semanticPage.title,
+		finalSubmissionTriggered: previousState.finalSubmissionTriggered === true || semanticPage.finalSubmissionTriggered === true,
 		detectedFields,
 		remainingRequiredFields: getRemainingRequiredFields(detectedFields),
 		validationErrors,
+		updatedAt: timestamp,
+	};
+}
+
+function buildSkippedFieldStatePatch(previousState, reviewPrompt, date = new Date()) {
+	const timestamp = date.toISOString();
+	const skippedField = {
+		fieldFingerprint: reviewPrompt.fieldFingerprint || "",
+		fieldId: reviewPrompt.fieldId || "",
+		fieldIntent: reviewPrompt.fieldIntent || "unknown",
+		label: toLabelFact(reviewPrompt.fieldLabel),
+		controlType: reviewPrompt.controlType || "",
+		resolutionMethod: "skipped",
+		skippedAt: timestamp,
+	};
+
+	return {
+		skippedFields: upsertByFingerprint(previousState.skippedFields || [], skippedField),
+		currentExecutionStatus: "running",
+		status: "running",
+		updatedAt: timestamp,
+	};
+}
+
+function buildManualCompletionStatePatch(previousState, reviewPrompt, date = new Date()) {
+	const timestamp = date.toISOString();
+	const manualField = {
+		fieldFingerprint: reviewPrompt.fieldFingerprint || "",
+		fieldId: reviewPrompt.fieldId || "",
+		fieldIntent: reviewPrompt.fieldIntent || "unknown",
+		label: toLabelFact(reviewPrompt.fieldLabel),
+		controlType: reviewPrompt.controlType || "",
+		resolutionMethod: "manual",
+		verifiedAt: timestamp,
+	};
+
+	return {
+		completedFields: upsertByFingerprint(previousState.completedFields || [], manualField),
+		currentExecutionStatus: "running",
+		status: "running",
 		updatedAt: timestamp,
 	};
 }
@@ -160,6 +201,7 @@ function upsertCompletedField(completedFields, step, verification, timestamp) {
 		label: toLabelFact(step.field.label),
 		profilePropertyPath: step.profileProperty.path,
 		source: step.profileProperty.source || "",
+		resolutionMethod: getResolutionMethod(step),
 		provenance: step.provenance || {},
 		reviewAnswerFingerprint: step.profileProperty.reviewAnswer ? step.profileProperty.reviewAnswer.fieldFingerprint : "",
 		action: step.action,
@@ -190,6 +232,14 @@ function updateUploadedFiles(uploadedFiles, step, verification, timestamp) {
 	];
 }
 
+function getResolutionMethod(step) {
+	if (step.profileProperty && step.profileProperty.source === "explicit-user-review") return "user-confirmed";
+	if (step.profileProperty && step.profileProperty.source === "codex-semantic") return "codex-semantic";
+	if (step.profileProperty && step.profileProperty.source === "manual") return "manual";
+	if (step.profileProperty && step.profileProperty.source) return "direct-alias";
+	return "direct-alias";
+}
+
 function upsertReviewAnswer(reviewAnswers, reviewAnswer) {
 	const existingIndex = reviewAnswers.findIndex((answer) => {
 		return answer.fieldFingerprint === reviewAnswer.fieldFingerprint
@@ -198,6 +248,13 @@ function upsertReviewAnswer(reviewAnswers, reviewAnswer) {
 	});
 	if (existingIndex === -1) return [...reviewAnswers, reviewAnswer];
 	return reviewAnswers.map((answer, index) => index === existingIndex ? reviewAnswer : answer);
+}
+
+function upsertByFingerprint(items, item) {
+	const fingerprint = item.fieldFingerprint || "";
+	const existingIndex = items.findIndex((existing) => existing.fieldFingerprint === fingerprint && fingerprint);
+	if (existingIndex === -1) return [...items, item];
+	return items.map((existing, index) => index === existingIndex ? item : existing);
 }
 
 function summarizeGateResult(gateResult = {}) {
@@ -213,6 +270,8 @@ module.exports = {
 	buildObservationStatePatch,
 	buildReviewAnswerStatePatch,
 	buildReviewPromptStatePatch,
+	buildManualCompletionStatePatch,
+	buildSkippedFieldStatePatch,
 	buildStatusStatePatch,
 	buildSuccessfulActionStatePatch,
 };

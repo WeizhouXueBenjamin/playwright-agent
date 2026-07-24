@@ -17,6 +17,7 @@ function createInitialRuntimeState(goal = "") {
 		uploadedFiles: [],
 		recentActions: [],
 		decisionGateResults: [],
+		finalSubmissionTriggered: false,
 		currentExecutionStatus: "initialized",
 		status: "initialized",
 		validationErrors: [],

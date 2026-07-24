@@ -1,6 +1,6 @@
 const { listProfileProperties } = require("../profile/profile-properties");
 const { classifyFieldIntent, evaluateFieldAnswerSafety } = require("./field-answer-safety");
-const { createReviewAnswerProfileProperty, findReviewAnswerForField } = require("../review/review-resolution");
+const { buildFieldFingerprint, createReviewAnswerProfileProperty, findReviewAnswerForField } = require("../review/review-resolution");
 const { resolveLocationProfileProperty } = require("./location-resolution");
 const { resolveWorkEligibilityProfileProperty } = require("./work-eligibility-resolution");
 const { scoreTextMatch } = require("./text-similarity");
@@ -10,7 +10,9 @@ const MATCHABLE_KINDS = new Set(["text-input", "checkbox", "radio", "selection",
 function matchFieldsToProfile(semanticPage, profile, options = {}) {
 	const threshold = options.threshold || 45;
 	const profileProperties = listProfileProperties(profile);
-	const matchableFields = getMatchableFields(semanticPage);
+	const matchableFields = getMatchableFields(semanticPage)
+		.filter((field) => !isSkippedField(field, options.runtimeState || {}))
+		.filter((field) => !isManuallyCompletedField(field, options.runtimeState || {}));
 	const referralSourceDefaultFieldId = findDefaultReferralSourceFieldId(matchableFields);
 
 	return matchableFields
@@ -62,6 +64,21 @@ function matchFieldsToProfile(semanticPage, profile, options = {}) {
 		};
 		if (fieldAnswerSafety.riskLevel === "high") match.safetyDecision = safetyDecision;
 		return match;
+	});
+}
+
+function isSkippedField(field, runtimeState) {
+	const fingerprint = buildFieldFingerprint(field);
+	return (runtimeState.skippedFields || []).some((skippedField) => {
+		return skippedField.fieldFingerprint === fingerprint || skippedField.fieldId === field.id;
+	});
+}
+
+function isManuallyCompletedField(field, runtimeState) {
+	const fingerprint = buildFieldFingerprint(field);
+	return (runtimeState.completedFields || []).some((completedField) => {
+		return completedField.resolutionMethod === "manual"
+			&& (completedField.fieldFingerprint === fingerprint || completedField.fieldId === field.id);
 	});
 }
 
@@ -188,6 +205,7 @@ function getMatchableFields(semanticPage) {
 		return element.kind !== "button" && element.kind !== "link";
 	});
 }
+
 
 function findDefaultReferralSourceFieldId(fields) {
 	const referralGroup = getReferralSourceCheckboxGroup(fields);

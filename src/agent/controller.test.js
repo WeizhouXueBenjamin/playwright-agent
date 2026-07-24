@@ -13,11 +13,66 @@ async function main() {
 		await assertRecoveryRetriesFailedClick(browser);
 		await assertAdaptsThroughCookieBanner(browser);
 		await assertStopsOnLoginPage(browser);
+		await assertStopsOnUnavailableApplication(browser);
 		await assertAdvancesUnexpectedIntermediatePage(browser);
 		await assertStopsBeforeFinalSubmission(browser);
 		await assertResumesAfterReviewAnswer(browser);
+		await assertSupportsReviewSkip(browser);
+		await assertSupportsReviewManual(browser);
+		await assertSupportsReviewStop(browser);
 	} finally {
 		await browser.close();
+	}
+}
+
+async function assertStopsOnUnavailableApplication(browser) {
+	const { context, page } = await openPage(browser, createUnavailablePageUrl());
+	try {
+		await waitForPageStable(page);
+
+		const controller = new AgentController({ maxCycles: 5 });
+		const result = await controller.runOnPage(page, {});
+
+		assert.equal(result.status, "needs-review");
+		assert.equal(result.reason, "application-unavailable");
+		assert.equal(result.lifecycle[0].terminalState.details.pageIntent.intent, "application-unavailable");
+	} finally {
+		await context.close();
+	}
+}
+
+function createUnavailablePageUrl() {
+	const html = [
+		"<!doctype html>",
+		"<html>",
+		"<body>",
+		"<main>",
+		"<h1>This job is no longer available</h1>",
+		"<p>We are no longer accepting applications for this role.</p>",
+		"</main>",
+		"</body>",
+		"</html>",
+	].join("");
+
+	return `data:text/html,${encodeURIComponent(html)}`;
+}
+
+async function assertSupportsReviewStop(browser) {
+	const { context, page } = await openPage(browser, createReviewResolutionPageUrl());
+	try {
+		await waitForPageStable(page);
+
+		const controller = new AgentController({
+			maxCycles: 10,
+			reviewAnswerProvider: async () => ({ command: "stop" }),
+		});
+		const result = await controller.runOnPage(page, { firstName: "Aroha" });
+
+		assert.equal(result.status, "needs-review");
+		assert.equal(result.reason, "stopped-by-user");
+		assert.equal(await page.locator("#submitted").textContent(), "not submitted");
+	} finally {
+		await context.close();
 	}
 }
 
@@ -48,12 +103,57 @@ async function assertResumesAfterReviewAnswer(browser) {
 		assert.equal(await page.getByLabel("First name").inputValue(), "Aroha");
 		assert.equal(await page.getByLabel("Are you legally authorized to work in New Zealand?").inputValue(), "Yes");
 		assert.equal(await page.locator("#submitted").textContent(), "not submitted");
+		assert.equal(result.runtimeState.finalSubmissionTriggered, false);
 		assert.equal(result.runtimeState.reviewAnswers.length, 1);
 		assert.equal(result.runtimeState.reviewAnswers[0].source, "explicit-user-review");
 		assert.equal(result.runtimeState.reviewAnswers[0].scope, "current-run");
 		assert.equal(result.runtimeState.completedFields.some((field) => field.source === "explicit-user-review"), true);
 		assert.equal(result.runtimeState.manualReview.length, 1);
 		assert.deepEqual(profile, originalProfile);
+	} finally {
+		await context.close();
+	}
+}
+
+async function assertSupportsReviewSkip(browser) {
+	const { context, page } = await openPage(browser, createReviewResolutionPageUrl());
+	try {
+		await waitForPageStable(page);
+
+		const controller = new AgentController({
+			maxCycles: 10,
+			reviewAnswerProvider: async () => ({ command: "skip" }),
+		});
+		const result = await controller.runOnPage(page, { firstName: "Aroha" });
+
+		assert.equal(result.status, "awaiting-human-confirmation");
+		assert.equal(result.runtimeState.skippedFields.length, 1);
+		assert.equal(result.runtimeState.skippedFields[0].resolutionMethod, "skipped");
+		assert.equal(await page.getByLabel("First name").inputValue(), "Aroha");
+		assert.equal(await page.locator("#submitted").textContent(), "not submitted");
+	} finally {
+		await context.close();
+	}
+}
+
+async function assertSupportsReviewManual(browser) {
+	const { context, page } = await openPage(browser, createReviewResolutionPageUrl());
+	try {
+		await waitForPageStable(page);
+
+		const controller = new AgentController({
+			maxCycles: 10,
+			reviewAnswerProvider: async ({ page: activePage }) => {
+				await activePage.getByLabel("Are you legally authorized to work in New Zealand?").selectOption({ label: "Yes" });
+				return { command: "manual" };
+			},
+		});
+		const result = await controller.runOnPage(page, { firstName: "Aroha" });
+
+		assert.equal(result.status, "awaiting-human-confirmation");
+		assert.equal(result.runtimeState.completedFields.some((field) => field.resolutionMethod === "manual"), true);
+		assert.equal(await page.getByLabel("Are you legally authorized to work in New Zealand?").inputValue(), "Yes");
+		assert.equal(await page.locator("#submitted").textContent(), "not submitted");
 	} finally {
 		await context.close();
 	}

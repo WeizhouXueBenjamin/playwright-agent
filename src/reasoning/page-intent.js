@@ -6,6 +6,7 @@ const PAGE_INTENTS = {
 	LOGIN_PAGE: "login-page",
 	MODAL_DIALOG: "modal-dialog",
 	ONBOARDING_FLOW: "onboarding-flow",
+	APPLICATION_UNAVAILABLE: "application-unavailable",
 	RESUME_PARSING_PAGE: "resume-parsing-page",
 	UNEXPECTED_INTERMEDIATE_PAGE: "unexpected-intermediate-page",
 	UNKNOWN: "unknown",
@@ -17,6 +18,7 @@ function detectPageIntent(semanticPage) {
 		detectConfirmationDialog(signals),
 		detectCookieBanner(signals),
 		detectLoginPage(signals),
+		detectApplicationUnavailable(signals),
 		detectResumeParsingPage(signals),
 		detectOnboardingFlow(signals),
 		detectModalDialog(signals),
@@ -35,12 +37,27 @@ function detectPageIntent(semanticPage) {
 	};
 }
 
+function detectApplicationUnavailable(signals) {
+	const unavailablePhrases = [
+		"job is no longer available",
+		"application is no longer available",
+		"position has been filled",
+		"job has been closed",
+		"no longer accepting applications",
+		"not accepting applications",
+	];
+	if (!containsAny(signals.normalizedText, unavailablePhrases)) return null;
+
+	return buildIntent(PAGE_INTENTS.APPLICATION_UNAVAILABLE, 90, ["application unavailable language"], "stop-application-unavailable", null);
+}
+
 function collectSignals(semanticPage) {
 	const elements = semanticPage.interactiveElements || [];
 	const fields = elements.filter((element) => ["text-input", "checkbox", "radio", "selection", "editable"].includes(element.kind));
 	const buttons = elements.filter((element) => element.kind === "button");
 	const text = [
 		semanticPage.title || "",
+		semanticPage.visibleText || "",
 		...elements.map((element) => element.label && element.label.text || ""),
 		...elements.map((element) => element.evidence && element.evidence.visibleText || ""),
 		...fields.map((field) => field.placeholder || ""),

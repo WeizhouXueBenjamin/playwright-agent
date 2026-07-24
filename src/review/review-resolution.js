@@ -35,6 +35,7 @@ function normalizeReviewPrompt(reviewItem = {}) {
 		fieldFingerprint,
 		fieldId: field.id || "",
 		fieldLabel: label,
+		controlType: field.kind || "",
 		question: getQuestionText(field, label),
 		options,
 		currentProfileValue,

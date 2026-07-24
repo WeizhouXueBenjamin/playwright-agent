@@ -1,390 +1,130 @@
-# Browser AI Agent Continuous Validation
+# Personal Job Application Assistant - Validate
 
-## Context
+## Authority
 
-The Browser AI Agent is validated through benchmark-driven continuous improvement.
+Before using this command, read:
 
-Use the full Continuous Improvement Loop:
+1. `AGENTS.md`
+2. `.codex/prompts/PROJECT_DIRECTION.md`
 
-Benchmark
--> Diagnostics
--> Capability Analysis
--> Improvement Proposal
--> Regression Replay
--> Capability History
+`PROJECT_DIRECTION.md` is authoritative. If this command conflicts with it, follow `PROJECT_DIRECTION.md`.
 
-Benchmark Model V2 is additive. Do not remove, rename, or reinterpret existing V1 fields.
+## Purpose
 
-V1 is the compatibility and regression track:
+Validate the local product workflow with offline regression coverage and selected redacted replay cases.
 
-- summary
-- metrics
-- health
-- caseResults
-- schemaVersion=1 reports
-- legacy component coverage
-- V1 regression gate
+This command is for validation, not for active job applications and not for live-site exploration.
 
-V2 is the diagnostics and explainability track:
+Use the implemented commands:
 
-- metricsV2
-- healthV2
-- Page Profile
-- Applicable Components
-- Applicable Coverage
-- Decision Metrics
-- Efficiency Metrics
-- Task Outcome
-- layered Observation / Decision / Page / Task / Benchmark diagnosis
+```bash
+npm run test:mvp
+npm run benchmark:core
+npm run benchmark:replay
+```
 
-Do not use V2 metrics to fail the existing V1 regression gate unless the benchmark tooling explicitly supports that later.
+Use replay-case creation only when justified by a completed run artifact:
 
-Do not automatically modify source code during validation. Generate advisory improvement proposals only. Any suggested improvement must cite objective artifact evidence.
+```bash
+npm run benchmark:add-case -- <run-id>
+```
 
----
+## Scope
 
-# Target Website
+Validation must remain aligned with the current product:
 
-Default benchmark target:
+- local single-user tool
+- human present during execution
+- no automatic final submission
+- no paid per-request model API requirement
+- no new general-purpose browser-agent framework
+- no ATS-specific selectors or workflow scripts
+- no composite health score as the primary signal
 
-<https://job-boards.greenhouse.io/released/jobs/7802196003>
+## Offline Core Benchmark
 
-When a dataset path is supplied, use that dataset instead of the default target.
+`npm run benchmark:core` must use authored local fixtures only.
 
----
+It should cover practical workflow behavior such as:
 
-# Objective
+- stable identity fields
+- select, checkbox, and upload actions
+- job-detail or navigation to form where available
+- review-required fields
+- login blocker
+- unavailable application
+- salary/legal/privacy safeguards
+- final-submit protection
 
-Evaluate the Browser AI Agent against real ATS benchmark data.
+Do not point the default core benchmark at a public URL.
 
-The purpose is not to submit an application.
+## Replay Benchmark
 
-The purpose is to discover, explain, and prioritize generic Browser AI Agent capability gaps using objective artifacts.
+`npm run benchmark:replay` must use selected anonymized replay cases only.
 
----
+Add a replay case only when a run represents:
 
-# Execution Rules
+- an incorrect entry
+- a safety issue
+- a recurring intervention
+- new semantic wording
+- new control behavior
+- a verification failure
 
-Execution Mode: headed, persistent
+Do not archive every successful production run.
 
-Browser: Chromium
+Replay cases must be redacted and reviewable. They must not include:
 
-Viewport: Desktop
+- selectors
+- credentials
+- cookies
+- raw secrets
+- full sensitive answers
+- resume contents
+- generated personal prose
 
-Always stop before irreversible actions.
+## Metrics
 
-Never:
+Use transparent counts and rates, with clear denominators:
 
-- submit an application
-- confirm final submission
-- create an account
-- perform an action that cannot be safely reversed
+- `directResolutionRate = directAliasFields / allResolvedFields`
+- `semanticResolutionRate = codexSemanticFields / allResolvedFields`
+- `manualInterventionRate = userConfirmedOrEditedOrManualFields / allEncounteredActionableFields`
+- `incorrectFieldEntries = verified incorrect entries`
+- `verificationFailures = failed post-action verifications`
+- `finalSubmissionTriggered = observed submit events or irreversible submit navigation`
 
-Every interaction must follow:
+Do not use one opaque health score as the primary product metric.
 
-Observe
--> Decide
--> Execute
--> Verify
--> Update Runtime State
+## Safety Checks
 
-All metrics and proposals must be derived from artifacts:
+Every validation run must confirm:
 
-- observationReport
-- validationReport
-- executionReport
-- executionTimeline
-- runtimeTimeline
-- finalRuntimeState
-- semanticPage
-- policyEvaluation
-- verificationResults
-- failureReport
-- backlog
-- metricsV2
-- healthV2
-- postmortem
-- improvementProposals
-- capability history
+```text
+incorrectFieldEntries = 0
+finalSubmissionTriggered = false
+unsafeActionsExecuted = 0
+```
 
-Do not use LLM subjective scoring for metrics, health, proposal ranking, or capability status.
+Do not weaken salary, work-authorization, immigration, legal, privacy, declaration, upload, or final-submit safeguards to make validation pass.
 
----
+## Codex Semantic / Generation Claims
 
-# Phase 1 - Benchmark
+Fixture providers prove contract behavior only.
 
-Run the complete RWVS benchmark pipeline for the target dataset or website.
+Claim real Codex semantic or generation capability only when a supported local Codex CLI adapter smoke test has passed. If unavailable or failing, report the capability as integration-blocked and ensure unresolved fields route to user review.
 
-Generate and preserve all normal RWVS artifacts.
+## Required Final Response
 
-Required outputs:
+Summarize:
 
-- reports/benchmark-report.json
-- reports/benchmark.md
-- reports/observation-report.json
-- reports/validation-report.json
-- reports/execution-report.json
-- reports/failure-report.json
-- reports/backlog.json
-- reports/improvement-summary.json
+- commands run
+- core benchmark result
+- replay benchmark result
+- focused test result
+- safety invariant status
+- any blocked Codex semantic/generation capability
+- any replay candidate created
+- highest-value next validation gap
 
-V1 compatibility outputs must remain present and unchanged:
-
-- summary
-- metrics
-- health
-- caseResults
-- validationReport.componentValidation.coverage.coverageRatio
-
----
-
-# Phase 2 - Diagnostics
-
-Use Benchmark Model V2 as the diagnostics track.
-
-Required V2 outputs:
-
-- metricsV2
-- healthV2
-- metricsV2.pageProfile
-- metricsV2.applicableComponents
-- metricsV2.coverage.legacyCoverageRatio
-- metricsV2.coverage.applicableCoverageRatio
-- metricsV2.decision
-- metricsV2.task.efficiency
-- metricsV2.task.outcome
-
-Report objective diagnostics for:
-
-- Observation metrics
-- Decision metrics
-- Page metrics
-- Task metrics
-- Benchmark metrics
-- Layered Health
-- Task Outcome
-- Efficiency Metrics
-
-Decision metrics must be derived only from:
-
-- executionTimeline
-- policyEvaluation
-- verificationResults
-- runtimeTimeline
-- finalRuntimeState
-
-Efficiency metrics must be derived only from:
-
-- executedActions
-- executionTimeline
-- runtimeTimeline
-- finalRuntimeState.completedFields
-
----
-
-# Phase 3 - Capability Analysis
-
-Map failures and task outcomes to generic capabilities.
-
-Capability taxonomy:
-
-- Policy Navigation
-- Runtime State Planning
-- Field Identification
-- Semantic Matching
-- Verification
-- Recovery
-- Page Profile
-- Applicable Components
-- Safety / Policy
-
-Required capability outputs:
-
-- capability-evolution-log.md
-- capability-history.json
-
-Every capability entry must include objective evidence:
-
-- benchmark id
-- platform
-- result
-- pageProfile
-- task outcome
-- capability gap
-- evidence
-- generic improvement
-- status
-- affected layers
-
-Do not create website-specific capability labels or platform-specific fixes.
-
----
-
-# Phase 4 - Improvement Proposal
-
-Generate advisory improvement proposals.
-
-Required output:
-
-- reports/improvement-proposals.json
-
-Each proposal must include:
-
-- capability
-- title
-- evidence
-- affectedLayers
-- expectedImpact
-- regressionRisk
-- suggestedScope
-- candidateTests
-- status
-
-Allowed statuses:
-
-- proposed
-- accepted
-- rejected
-- deferred
-
-Proposal generation rules:
-
-- derive from failureReport, metricsV2.task.outcome, metricsV2.decision, metricsV2.task.efficiency, and backlog
-- rank recurring or high-impact capability gaps higher
-- rank policy/safety risks highest
-- do not generate website-specific fixes
-- do not automatically modify source code
-- cite artifact evidence for every recommendation
-
-If repeated verified fields are already fixed, do not create an open Runtime State Planning proposal for that issue. It should appear as validated capability history instead.
-
----
-
-# Phase 5 - Regression Replay
-
-Run the V1 regression gate exactly as implemented.
-
-V1 regression behavior is compatibility-critical and must remain unchanged.
-
-Report:
-
-- regression status
-- previous V1 metrics, if available
-- current V1 metrics
-- regressions detected by the V1 gate
-
-V2 may be shown for diagnostics, but V2 must not fail the existing V1 regression flow.
-
----
-
-# Phase 6 - Post-mortem
-
-Generate an engineering post-mortem after each RWVS run.
-
-Required output:
-
-- reports/postmortem.md
-
-The post-mortem must include:
-
-- Task Summary
-- V1 Result
-- V2 Layer Diagnosis
-- Page Profile
-- Applicable Coverage
-- Decision Metrics
-- Efficiency Metrics
-- Task Outcome
-- Blocking Issue
-- Capability Gap
-- Evidence
-- Suggested Generic Improvement
-- Regression Replay Result, if available
-
-The post-mortem must be derived from:
-
-- metricsV2
-- healthV2
-- failureReport
-- backlog
-- executionReport
-- regression result
-
-The post-mortem does not replace benchmark.md. It is an engineering diagnostic report.
-
----
-
-# Phase 7 - Capability History
-
-Update cross-run and cross-benchmark capability artifacts.
-
-Required outputs:
-
-- capability-evolution-log.md
-- capability-history.json
-- recurring-issues.md, if available
-- recurring-issues.json, if available
-
-Recurring issue fields:
-
-- capability
-- occurrences
-- platforms
-- benchmarks
-- firstSeen
-- lastSeen
-- priority
-- status
-- relatedImprovements
-
-Priority rules:
-
-- policy and safety issues are highest priority
-- verification regressions are high priority
-- multi-platform recurring capability gaps are promoted
-- single-platform low-impact issues remain low priority
-
-Recurring Issues should guide the next developer-approved generic fix. They must not change the current RWVS result.
-
----
-
-# Required Final Output
-
-Summarize the run using these sections:
-
-1. V1 Metrics
-2. V2 Metrics
-3. Task Outcome
-4. Efficiency Metrics
-5. Post-mortem
-6. Improvement Proposals
-7. Capability Evolution Log
-8. Recurring Issues, if available
-9. Regression Replay Result
-10. Artifact Evidence
-
-Every conclusion or suggested improvement must reference the artifact that supports it.
-
-The final summary must clearly state:
-
-- V1 is the compatibility/regression track
-- V2 is the diagnostics/explainability track
-- no source code was automatically changed by validation
-- any future code change requires developer approval and should be generic
-
----
-
-# Success Criteria
-
-Validation succeeds when:
-
-- all required artifacts are generated
-- V1 metrics and V1 regression gate remain intact
-- V2 diagnostics explain the observed behavior using objective data
-- postmortem.md provides an engineering diagnosis
-- improvementProposals are advisory and evidence-backed
-- capability history is updated
-- recurring issues are refreshed when prior benchmark artifacts are available
-- no application is submitted
-- no account is created
-- no website-specific code change is proposed as the default path
+Clearly state that validation did not submit an application, create an account, or modify production source code.

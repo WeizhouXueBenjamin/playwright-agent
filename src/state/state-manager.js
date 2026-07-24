@@ -3,8 +3,10 @@ const { assertRuntimeStateContract, assertRuntimeStatePatchContract } = require(
 const {
 	buildObservationStatePatch,
 	buildDecisionGateStatePatch,
+	buildManualCompletionStatePatch,
 	buildReviewAnswerStatePatch,
 	buildReviewPromptStatePatch,
+	buildSkippedFieldStatePatch,
 	buildSuccessfulActionStatePatch,
 	buildStatusStatePatch,
 } = require("./state-update-pipeline");
@@ -33,6 +35,16 @@ class StateManager {
 
 	recordReviewAnswer(reviewAnswer, date = new Date()) {
 		this.applyPatch(buildReviewAnswerStatePatch(this.state, reviewAnswer, date));
+		return this.getState();
+	}
+
+	recordSkippedField(reviewPrompt, date = new Date()) {
+		this.applyPatch(buildSkippedFieldStatePatch(this.state, reviewPrompt, date));
+		return this.getState();
+	}
+
+	recordManualCompletion(reviewPrompt, date = new Date()) {
+		this.applyPatch(buildManualCompletionStatePatch(this.state, reviewPrompt, date));
 		return this.getState();
 	}
 

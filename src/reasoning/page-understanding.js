@@ -15,6 +15,7 @@ function buildSemanticPage(rawPage) {
 		schemaVersion: 1,
 		url: rawPage.url,
 		title: rawPage.title,
+		visibleText: rawPage.visibleText || "",
 		summary: summarize(interactiveElements, forms),
 		interactiveElements,
 		forms,

@@ -1,248 +1,116 @@
-# Browser AI Agent - Analyze Completed Run
+# Personal Job Application Assistant - Analyze Last Run
+
+## Authority
+
+Before using this command, read:
+
+1. `AGENTS.md`
+2. `.codex/prompts/PROJECT_DIRECTION.md`
+
+`PROJECT_DIRECTION.md` is authoritative. If this command conflicts with it, follow `PROJECT_DIRECTION.md`.
 
 ## Purpose
 
-Analyze an already completed production or benchmark run.
+Analyze a completed local apply run using compact artifacts.
 
-This is a post-run diagnostics workflow. It does not perform the active application task.
+This is a diagnostics workflow. It must not reopen the target site, interact with the browser, submit anything, or modify production source code.
 
-Do not reopen or interact with the target website unless artifacts are incomplete and the user explicitly requests a replay.
+Use the implemented command:
 
-Do not modify source code.
+```bash
+npm run analyze:last-run
+```
 
----
+## Inputs
 
-# Inputs
+Default input is the most recent artifact under:
 
-Use the most recent run unless a run path or run ID is supplied.
+```text
+logs/apply/run-*/run-artifact.json
+```
 
-Required evidence may include:
+The compact artifact may contain:
 
-- observationReport
-- validationReport
-- executionReport
-- executionTimeline
-- runtimeTimeline
-- finalRuntimeState
-- semanticPage
-- policyEvaluation
-- verificationResults
-- failureReport
-- backlog
-- benchmark report, when available
-- metricsV2, when available
-- healthV2, when available
+- terminal status
+- filled fields
+- generated answers
+- manual interventions
+- failures
+- safety stops
+- configured document presence
+- final-submit observation
+- field-resolution provenance
+- lightweight metrics
 
-If benchmark artifacts are unavailable, reconstruct the best possible production-run diagnosis from execution artifacts only.
+If no run exists, report the no-run state and the next action. Do not fabricate analysis.
 
----
+## Analysis Rules
 
-# Workflow
+Use only objective artifact evidence.
 
-Load Run Artifacts
+Do not:
 
--> Reconstruct Task Outcome
-
--> Build V2 Diagnostics
-
--> Identify Capability Gap
-
--> Generate Post-mortem
-
--> Generate Advisory Proposals
-
--> Update Capability History
-
-Do not run the V1 regression gate unless explicitly requested.
-
-Do not interact with the website during normal analysis.
-
----
-
-# Required Outputs
-
-Generate when enough evidence exists:
-
-- reports/postmortem.md
-- reports/improvement-proposals.json
-- capability evolution entry
-- capability-history.json
-- recurring-issues.json or recurring-issues.md when prior runs exist
-
-When benchmark data is available, also preserve:
-
-- V1 result
-- V2 metrics
-- layered diagnosis
-- efficiency metrics
-- applicable coverage
-
----
-
-# Analysis Rules
-
-All conclusions must be derived from objective artifacts.
-
-Do not use subjective numeric scoring.
-
-Do not generate website-specific fixes.
+- use subjective or composite health scores
+- generate site-specific fixes
+- archive every successful run as replay
+- modify source code
+- suggest weakening final-submit, salary, legal, privacy, consent, immigration, or work-authorization safeguards
+- infer missing personal facts from generated text or profile-adjacent data
 
 Separate:
 
-- task blocker
-- technical failure
-- safe stop
-- user-data requirement
-- unsupported capability
-- policy restriction
-
-A production run that safely reaches final review is a successful task even when no application is submitted.
-
----
-
-# Task Outcome Reconstruction
-
-Classify the completed run into one terminal outcome:
-
-- ready-for-review
-- needs-review
-- login-required
-- human-verification-required
-- unsupported-component
-- policy-stopped
-- application-unavailable
-- failed
-
-Also classify product success outcome:
-
-- success
-- partial-success
-- acceptable-degradation
-- failure
-- severe-failure
-- severe-safety-failure
-
-Use only objective evidence from execution status, terminal state, policy evaluation, verification results, runtime state, and failure reports.
-
----
-
-# Capability Analysis
-
-Map blockers and failures to generic capabilities:
-
-- Policy Navigation
-- Runtime State Planning
-- Field Identification
-- Semantic Matching
-- Verification
-- Recovery
-- Page Profile
-- Applicable Components
-- Safety / Policy
-
-Every capability gap must include artifact evidence and affected layers.
-
-Do not create platform-specific capability labels.
-
----
-
-# Improvement Proposals
-
-Proposals are advisory only.
-
-Each proposal must contain:
-
-- capability
-- title
-- objective evidence
-- affected layers
-- expected impact
-- regression risk
-- suggested implementation scope
+- successful fields
+- user interventions
+- failure categories
+- recurring evidence
+- suggested generic fixes
 - candidate tests
-- status
 
-Allowed statuses:
+The analysis is advisory. It does not approve a code change.
 
-- proposed
-- accepted
-- rejected
-- deferred
+## Terminal Outcomes
 
-Do not automatically edit source code.
+Normalize completed runs into the current product outcomes:
 
-Do not propose website-specific fixes.
+- `ready-for-review`
+- `needs-review`
+- `login-required`
+- `manual-intervention-required`
+- `application-unavailable`
+- `failed`
 
-If an issue is already fixed and the latest run validates the fix, record it as capability history instead of an open proposal.
+A safe stop before final submission is not a failure.
 
----
+## Replay Guidance
 
-# Post-mortem Format
+Recommend `benchmark:add-case` only when the run contains reproducible evidence of:
 
-`reports/postmortem.md` should include:
+- an incorrect entry
+- a safety issue
+- a recurring intervention
+- new semantic wording
+- new control behavior
+- a verification failure
 
-- Task Summary
-- Product Success Outcome
-- V1 Result, when benchmark data exists
-- V2 Layer Diagnosis, when V2 data exists
-- Page Profile
-- Applicable Coverage
-- Decision Metrics
-- Efficiency Metrics
-- Task Outcome
-- Blocking Issue
-- Capability Gap
-- Evidence
-- Suggested Generic Improvement
-- Regression Replay Result, if available
+Use:
 
-The post-mortem is an engineering diagnostic report. It does not replace the concise production result shown to the user by apply.md.
+```bash
+npm run benchmark:add-case -- <run-id>
+```
 
----
+Replay candidates must be redacted and reviewable. They must not contain selectors, credentials, cookies, raw secrets, full sensitive answers, resume contents, or generated personal prose.
 
-# Capability History
-
-Update cross-run capability artifacts when possible:
-
-- capability-evolution-log.md
-- capability-history.json
-- recurring-issues.md
-- recurring-issues.json
-
-Recurring issue fields:
-
-- capability
-- occurrences
-- platforms
-- benchmarks
-- firstSeen
-- lastSeen
-- priority
-- status
-- relatedImprovements
-
-Priority rules:
-
-- policy and safety issues are highest priority
-- verification regressions are high priority
-- multi-platform recurring capability gaps are promoted
-- single-platform low-impact issues remain low priority
-
-Recurring issues guide the next developer-approved generic fix. They must not change the completed run result.
-
----
-
-# Final Response
+## Required Final Response
 
 Summarize:
 
 - run analyzed
 - terminal outcome
-- product success outcome
-- main blocker
-- capability gap
-- proposal count
-- highest-priority proposal
-- artifacts generated or updated
+- safety invariant status
+- successful field count
+- intervention count
+- failure categories
+- replay recommendation, if justified
+- generated diagnostic artifact paths
 
-Clearly state that no source code was modified.
+Clearly state that no production source code was modified.

@@ -19,6 +19,14 @@ function determineNextObjective(pageIntent, runtimeState) {
 		};
 	}
 
+	if (pageIntent.intent === PAGE_INTENTS.APPLICATION_UNAVAILABLE) {
+		return {
+			type: "needs-user",
+			reason: "application-unavailable",
+			description: "The job or application form appears unavailable.",
+		};
+	}
+
 	if (pageIntent.intent === PAGE_INTENTS.CONFIRMATION_DIALOG) {
 		return {
 			type: "needs-user",

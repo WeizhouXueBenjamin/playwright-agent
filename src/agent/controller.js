@@ -100,6 +100,43 @@ class AgentController {
 							page,
 						});
 						if (providedAnswer !== undefined && providedAnswer !== null) {
+							const reviewCommand = typeof providedAnswer === "object" && !Array.isArray(providedAnswer)
+								? providedAnswer.command || "answer"
+								: "answer";
+							if (reviewCommand === "stop") {
+								stateManager.setExecutionStatus("needs-review");
+								lifecycle.push({
+									...promptedLifecycleEntry,
+									phase: "observe-think-review-stopped",
+									runtimeStateSnapshot: stateManager.getState(),
+								});
+								return {
+									status: "needs-review",
+									reason: "stopped-by-user",
+									reviewPrompt,
+									reviewPromptText: formatReviewPrompt(reviewPrompt),
+									runtimeState: stateManager.getState(),
+									lifecycle,
+								};
+							}
+							if (reviewCommand === "skip") {
+								stateManager.recordSkippedField(reviewPrompt);
+								lifecycle.push({
+									...promptedLifecycleEntry,
+									phase: "observe-think-review-skipped",
+									runtimeStateSnapshot: stateManager.getState(),
+								});
+								continue;
+							}
+							if (reviewCommand === "manual") {
+								stateManager.recordManualCompletion(reviewPrompt);
+								lifecycle.push({
+									...promptedLifecycleEntry,
+									phase: "observe-think-review-manual",
+									runtimeStateSnapshot: stateManager.getState(),
+								});
+								continue;
+							}
 							const reviewAnswer = buildReviewAnswer({
 								...(typeof providedAnswer === "object" && !Array.isArray(providedAnswer)
 									? providedAnswer
