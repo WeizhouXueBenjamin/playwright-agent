@@ -6,7 +6,7 @@ const { waitForPageStable } = require("../browser/stability");
 const { runVerifiedAction } = require("../execution/verified-action-runner");
 const { RecoveryEngine } = require("../recovery/recovery-engine");
 const { gateStepForCurrentObservation } = require("./decision-gate");
-const { buildReviewAnswer, formatReviewPrompt, normalizeReviewPrompt } = require("../review/review-resolution");
+const { buildFieldFingerprint, buildReviewAnswer, formatReviewPrompt, normalizeReviewPrompt } = require("../review/review-resolution");
 const { StateManager } = require("../state/state-manager");
 
 class AgentController {
@@ -81,100 +81,17 @@ class AgentController {
 			};
 
 			if (terminalState.reached) {
-				if (terminalState.status === "needs-review") {
-					const reviewPrompt = normalizeReviewPrompt(terminalState.details || {});
-					stateManager.recordReviewPrompt(reviewPrompt);
-					const promptedState = stateManager.getState();
-					const promptedLifecycleEntry = {
-						...lifecycleEntry,
-						reviewPrompt,
-						reviewPromptText: formatReviewPrompt(reviewPrompt),
-						runtimeStateSnapshot: promptedState,
-					};
-
-					if (typeof this.options.reviewAnswerProvider === "function") {
-						const providedAnswer = await this.options.reviewAnswerProvider({
-							reviewPrompt,
-							reviewItem: terminalState.details || {},
-							runtimeState: promptedState,
-							page,
-						});
-						if (providedAnswer !== undefined && providedAnswer !== null) {
-							const reviewCommand = typeof providedAnswer === "object" && !Array.isArray(providedAnswer)
-								? providedAnswer.command || "answer"
-								: "answer";
-							if (reviewCommand === "stop") {
-								stateManager.setExecutionStatus("needs-review");
-								lifecycle.push({
-									...promptedLifecycleEntry,
-									phase: "observe-think-review-stopped",
-									runtimeStateSnapshot: stateManager.getState(),
-								});
-								return {
-									status: "needs-review",
-									reason: "stopped-by-user",
-									reviewPrompt,
-									reviewPromptText: formatReviewPrompt(reviewPrompt),
-									runtimeState: stateManager.getState(),
-									lifecycle,
-								};
-							}
-							if (reviewCommand === "skip") {
-								stateManager.recordSkippedField(reviewPrompt);
-								lifecycle.push({
-									...promptedLifecycleEntry,
-									phase: "observe-think-review-skipped",
-									runtimeStateSnapshot: stateManager.getState(),
-								});
-								continue;
-							}
-							if (reviewCommand === "manual") {
-								stateManager.recordManualCompletion(reviewPrompt);
-								lifecycle.push({
-									...promptedLifecycleEntry,
-									phase: "observe-think-review-manual",
-									runtimeStateSnapshot: stateManager.getState(),
-								});
-								continue;
-							}
-							const reviewAnswer = buildReviewAnswer({
-								...(typeof providedAnswer === "object" && !Array.isArray(providedAnswer)
-									? providedAnswer
-									: { answer: providedAnswer }),
-								reviewPrompt,
-								reviewItem: terminalState.details || {},
-							});
-							stateManager.recordReviewAnswer(reviewAnswer);
-							lifecycle.push({
-								...promptedLifecycleEntry,
-								phase: "observe-think-review-resolved",
-								reviewAnswer: {
-									fieldIntent: reviewAnswer.fieldIntent,
-									fieldFingerprint: reviewAnswer.fieldFingerprint,
-									source: reviewAnswer.source,
-									scope: reviewAnswer.scope,
-									authorizedAt: reviewAnswer.authorizedAt,
-									safetyReasonResolved: reviewAnswer.safetyReasonResolved,
-								},
-								runtimeStateSnapshot: stateManager.getState(),
-							});
-							continue;
-						}
-					}
-
-					stateManager.setExecutionStatus(terminalState.status);
-					lifecycle.push({
-						...promptedLifecycleEntry,
-						runtimeStateSnapshot: stateManager.getState(),
-					});
-					return {
-						status: terminalState.status,
-						reason: terminalState.reason,
-						reviewPrompt,
-						reviewPromptText: formatReviewPrompt(reviewPrompt),
-						runtimeState: stateManager.getState(),
+				if (terminalState.status === "needs-review" && isFieldReviewItem(terminalState.details)) {
+					const reviewResolution = await this.resolveReview({
+						page,
+						reviewItem: terminalState.details || {},
+						fallbackReason: terminalState.reason,
+						lifecycleEntry,
+						stateManager,
 						lifecycle,
-					};
+					});
+					if (reviewResolution.continueRun) continue;
+					return reviewResolution.result;
 				}
 
 				stateManager.setExecutionStatus(terminalState.status);
@@ -190,7 +107,8 @@ class AgentController {
 				};
 			}
 
-			const gateResult = await gateStepForCurrentObservation({
+			const gateStep = this.options.gateStep || gateStepForCurrentObservation;
+			const gateResult = await gateStep({
 				step: plannerDecision.step,
 				observation,
 				runtimeState: stateManager.getState(),
@@ -201,22 +119,26 @@ class AgentController {
 			stateManager.recordDecisionGateResult(gateResult);
 
 			if (gateResult.type !== "approved-action") {
-				lifecycle.push({
+				const gateLifecycleEntry = {
 					...lifecycleEntry,
 					phase: "observe-think-gate",
 					timestamp: new Date().toISOString(),
 					decisionGate: summarizeGateResult(gateResult),
 					runtimeStateSnapshot: stateManager.getState(),
-				});
+				};
 				if (gateResult.type === "review-item") {
-					stateManager.setExecutionStatus("needs-review");
-					return {
-						status: "needs-review",
-						reason: gateResult.reason,
-						runtimeState: stateManager.getState(),
+					const reviewResolution = await this.resolveReview({
+						page,
+						reviewItem: buildGateReviewItem(gateResult),
+						fallbackReason: gateResult.reason,
+						lifecycleEntry: gateLifecycleEntry,
+						stateManager,
 						lifecycle,
-					};
+					});
+					if (reviewResolution.continueRun) continue;
+					return reviewResolution.result;
 				}
+				lifecycle.push(gateLifecycleEntry);
 				if (gateResult.reason === "runtime-state-already-completed") continue;
 				stateManager.setExecutionStatus("verification-failed");
 				return {
@@ -289,6 +211,200 @@ class AgentController {
 		};
 	}
 
+	async resolveReview({ page, reviewItem, fallbackReason, lifecycleEntry, stateManager, lifecycle }) {
+		let reviewPrompt = normalizeReviewPrompt(reviewItem);
+		stateManager.recordReviewPrompt(reviewPrompt);
+
+		if (typeof this.options.reviewAnswerProvider !== "function") {
+			stateManager.setExecutionStatus("needs-review");
+			const promptedLifecycleEntry = buildPromptedLifecycleEntry(lifecycleEntry, reviewPrompt, stateManager);
+			lifecycle.push(promptedLifecycleEntry);
+			return {
+				continueRun: false,
+				result: buildReviewResult({
+					status: "needs-review",
+					reason: fallbackReason || "review-channel-unavailable",
+					reviewPrompt,
+					stateManager,
+					lifecycle,
+				}),
+			};
+		}
+
+		while (true) {
+			stateManager.setExecutionStatus("review-pending");
+			const promptedState = stateManager.getState();
+			const promptedLifecycleEntry = buildPromptedLifecycleEntry(lifecycleEntry, reviewPrompt, stateManager);
+			const providedAnswer = await this.options.reviewAnswerProvider({
+				reviewPrompt,
+				reviewItem,
+				runtimeState: promptedState,
+				page,
+			});
+
+			if (providedAnswer === undefined || providedAnswer === null) {
+				stateManager.setExecutionStatus("needs-review");
+				lifecycle.push({
+					...promptedLifecycleEntry,
+					phase: "observe-think-review-channel-unavailable",
+					runtimeStateSnapshot: stateManager.getState(),
+				});
+				return {
+					continueRun: false,
+					result: buildReviewResult({
+						status: "needs-review",
+						reason: "review-channel-unavailable",
+						reviewPrompt,
+						stateManager,
+						lifecycle,
+					}),
+				};
+			}
+
+			const reviewCommand = typeof providedAnswer === "object" && !Array.isArray(providedAnswer)
+				? providedAnswer.command || "answer"
+				: "answer";
+			if (reviewCommand === "stop") {
+				stateManager.setExecutionStatus("needs-review");
+				lifecycle.push({
+					...promptedLifecycleEntry,
+					phase: "observe-think-review-stopped",
+					runtimeStateSnapshot: stateManager.getState(),
+				});
+				return {
+					continueRun: false,
+					result: buildReviewResult({
+						status: "needs-review",
+						reason: "stopped-by-user",
+						reviewPrompt,
+						stateManager,
+						lifecycle,
+					}),
+				};
+			}
+			if (reviewCommand === "skip") {
+				stateManager.recordSkippedField(reviewPrompt);
+				stateManager.setExecutionStatus("running");
+				lifecycle.push({
+					...promptedLifecycleEntry,
+					phase: "observe-think-review-skipped",
+					runtimeStateSnapshot: stateManager.getState(),
+				});
+				return { continueRun: true };
+			}
+			if (reviewCommand === "manual") {
+				const manualVerification = await verifyManualCompletion(page, reviewPrompt);
+				if (!manualVerification.ok) {
+					lifecycle.push({
+						...promptedLifecycleEntry,
+						phase: "observe-think-review-manual-unverified",
+						manualVerification,
+						runtimeStateSnapshot: stateManager.getState(),
+					});
+					reviewPrompt = {
+						...reviewPrompt,
+						message: `Manual completion was not verified (${manualVerification.reason}). ${reviewPrompt.message}`,
+					};
+					continue;
+				}
+				stateManager.recordManualCompletion(reviewPrompt);
+				stateManager.setExecutionStatus("running");
+				lifecycle.push({
+					...promptedLifecycleEntry,
+					phase: "observe-think-review-manual",
+					manualVerification,
+					runtimeStateSnapshot: stateManager.getState(),
+				});
+				return { continueRun: true };
+			}
+
+			const reviewAnswer = buildReviewAnswer({
+				...(typeof providedAnswer === "object" && !Array.isArray(providedAnswer)
+					? providedAnswer
+					: { answer: providedAnswer }),
+				reviewPrompt,
+				reviewItem,
+			});
+			stateManager.recordReviewAnswer(reviewAnswer);
+			stateManager.setExecutionStatus("running");
+			lifecycle.push({
+				...promptedLifecycleEntry,
+				phase: "observe-think-review-resolved",
+				reviewAnswer: summarizeReviewAnswer(reviewAnswer),
+				runtimeStateSnapshot: stateManager.getState(),
+			});
+			return { continueRun: true };
+		}
+	}
+
+}
+
+function buildGateReviewItem(gateResult) {
+	return {
+		field: gateResult.field || gateResult.step && gateResult.step.field || {},
+		matchedProfileProperty: gateResult.step && gateResult.step.profileProperty || null,
+		safetyDecision: gateResult.safetyDecision || {},
+		reason: gateResult.reason || "review-required",
+	};
+}
+
+function isFieldReviewItem(reviewItem) {
+	return Boolean(reviewItem && reviewItem.field && reviewItem.field.id);
+}
+
+function buildPromptedLifecycleEntry(lifecycleEntry, reviewPrompt, stateManager) {
+	return {
+		...lifecycleEntry,
+		reviewPrompt,
+		reviewPromptText: formatReviewPrompt(reviewPrompt),
+		runtimeStateSnapshot: stateManager.getState(),
+	};
+}
+
+function buildReviewResult({ status, reason, reviewPrompt, stateManager, lifecycle }) {
+	return {
+		status,
+		reason,
+		reviewPrompt,
+		reviewPromptText: formatReviewPrompt(reviewPrompt),
+		runtimeState: stateManager.getState(),
+		lifecycle,
+	};
+}
+
+function summarizeReviewAnswer(reviewAnswer) {
+	return {
+		fieldIntent: reviewAnswer.fieldIntent,
+		fieldFingerprint: reviewAnswer.fieldFingerprint,
+		source: reviewAnswer.source,
+		scope: reviewAnswer.scope,
+		resolutionMethod: reviewAnswer.resolutionMethod,
+		authorizedAt: reviewAnswer.authorizedAt,
+		safetyReasonResolved: reviewAnswer.safetyReasonResolved,
+	};
+}
+
+async function verifyManualCompletion(page, reviewPrompt) {
+	const observation = await observePage(page);
+	const field = (observation.semanticPage.interactiveElements || []).find((element) => {
+		return buildFieldFingerprint(element) === reviewPrompt.fieldFingerprint || element.id === reviewPrompt.fieldId;
+	});
+	if (!field) return { ok: false, reason: "manual-field-not-found" };
+	if (!isFieldCompleted(field)) return { ok: false, reason: "manual-field-unchanged-or-invalid" };
+	if (field.validation && field.validation.valid === false) return { ok: false, reason: "manual-field-invalid" };
+	return {
+		ok: true,
+		reason: "manual-field-verified",
+		fieldId: field.id,
+	};
+}
+
+function isFieldCompleted(field) {
+	const state = field.state || {};
+	if (field.kind === "checkbox" || field.kind === "radio") return state.checked === true;
+	if (field.kind === "selection") return Boolean(state.value || state.selectedLabel);
+	if (Array.isArray(state.files)) return state.files.length > 0;
+	return Boolean(String(state.value || "").trim());
 }
 
 function summarizeRecovery(recovery) {

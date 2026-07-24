@@ -14,12 +14,18 @@ async function main() {
 		throw new Error("Usage: npm run apply -- <url> [profile.json] [resume] [cover-letter]");
 	}
 
+	const reviewAnswerProvider = createReviewAnswerProvider({
+		input: process.stdin,
+		output: process.stdout,
+		errorOutput: process.stderr,
+	});
 	const profile = JSON.parse(await fs.readFile(profilePath, "utf8"));
+	const { runId, runDir } = await createRunLogDir(path.join("logs", "apply"));
 	const agent = new BrowserAIAgent({
 		headless: false,
 		persistent: true,
 		userDataDir: path.resolve(".playwright", "apply-profile"),
-		reviewAnswerProvider: process.stdin.isTTY ? createCliReviewAnswerProvider() : null,
+		reviewAnswerProvider,
 	});
 	const result = await agent.completeJobApplication({
 		url: new URL(url).toString(),
@@ -36,7 +42,6 @@ async function main() {
 		coverLetterPath,
 		result,
 	});
-	const { runId, runDir } = await createRunLogDir(path.join("logs", "apply"));
 	compactArtifact.runId = runId;
 	const artifactPath = await writeJsonArtifact(runDir, "run-artifact.json", compactArtifact);
 
@@ -44,15 +49,27 @@ async function main() {
 	console.log(JSON.stringify(result, null, 2));
 }
 
-function createCliReviewAnswerProvider() {
+function createReviewAnswerProvider(options = {}) {
+	if (!options.input || options.input.isTTY !== true || !options.output || options.output.isTTY !== true) {
+		throw new Error(
+			"Interactive terminal required for human review. Run npm run apply directly in a terminal.",
+		);
+	}
+	return createCliReviewAnswerProvider(options);
+}
+
+function createCliReviewAnswerProvider(options = {}) {
+	const input = options.input || process.stdin;
+	const output = options.output || process.stdout;
+	const errorOutput = options.errorOutput || process.stderr;
 	return async ({ reviewPrompt, page }) => {
 		const rl = readline.createInterface({
-			input: process.stdin,
-			output: process.stdout,
+			input,
+			output,
 		});
 		try {
-			console.error("");
-			console.error(reviewPrompt.question ? buildPromptText(reviewPrompt) : "Review required.");
+			errorOutput.write("\n");
+			errorOutput.write(`${reviewPrompt.question ? buildPromptText(reviewPrompt) : "Review required."}\n`);
 			while (true) {
 				const command = (await rl.question("[A]ccept [E]dit [S]kip [M]anual [Q]uit > ")).trim().toLowerCase();
 				if (command === "q" || command === "quit" || command === "/stop") {
@@ -62,27 +79,29 @@ function createCliReviewAnswerProvider() {
 					return { command: "skip" };
 				}
 				if (command === "m" || command === "manual") {
-					console.error("Complete the field in the browser, then press Enter here to continue.");
+					errorOutput.write("Complete the field in the browser, then press Enter here to continue.\n");
 					await rl.question("");
 					if (page && typeof page.waitForTimeout === "function") await page.waitForTimeout(250);
 					return { command: "manual" };
 				}
 				if (command === "a" || command === "accept") {
 					if (!reviewPrompt.currentProfileValue) {
-						console.error("No suggestion is available to accept. Choose Edit, Skip, Manual, or Quit.");
+						errorOutput.write("No suggestion is available to accept. Choose Edit, Skip, Manual, or Quit.\n");
 						continue;
 					}
 					const confirmation = (await rl.question(`Use "${reviewPrompt.currentProfileValue}" for this run? [y/N] `)).trim().toLowerCase();
-					if (confirmation === "y" || confirmation === "yes") return { command: "answer", answer: reviewPrompt.currentProfileValue };
+					if (confirmation === "y" || confirmation === "yes") {
+						return { command: "answer", answer: reviewPrompt.currentProfileValue, resolutionMethod: "user-confirmed" };
+					}
 					continue;
 				}
 				if (command === "e" || command === "edit") {
 					const answer = (await rl.question("Exact run-scoped answer > ")).trim();
-					if (answer) return { command: "answer", answer };
-					console.error("Enter an answer, or choose another command.");
+					if (answer) return { command: "answer", answer, resolutionMethod: "user-edited" };
+					errorOutput.write("Enter an answer, or choose another command.\n");
 					continue;
 				}
-				console.error("Choose A, E, S, M, or Q.");
+				errorOutput.write("Choose A, E, S, M, or Q.\n");
 			}
 		} finally {
 			rl.close();
@@ -123,7 +142,7 @@ function buildCompactRunArtifact({ url, profilePath, resumePath, coverLetterPath
 	const runtimeState = result.runtimeState || {};
 	const lifecycle = result.lifecycle || [];
 	const completedFields = Array.isArray(runtimeState.completedFields) ? runtimeState.completedFields : [];
-	const reviewItems = Array.isArray(runtimeState.reviewItems) ? runtimeState.reviewItems : [];
+	const reviewItems = Array.isArray(runtimeState.manualReview) ? runtimeState.manualReview : [];
 	const decisionGateResults = Array.isArray(runtimeState.decisionGateResults) ? runtimeState.decisionGateResults : [];
 
 	return {
@@ -199,7 +218,16 @@ function buildRunMetrics({ runtimeState }) {
 	};
 }
 
-main().catch((error) => {
-	console.error(error);
-	process.exitCode = 1;
-});
+if (require.main === module) {
+	main().catch((error) => {
+		console.error(error);
+		process.exitCode = 1;
+	});
+}
+
+module.exports = {
+	buildCompactRunArtifact,
+	createCliReviewAnswerProvider,
+	createReviewAnswerProvider,
+	normalizeProductStatus,
+};

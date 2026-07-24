@@ -233,7 +233,9 @@ function updateUploadedFiles(uploadedFiles, step, verification, timestamp) {
 }
 
 function getResolutionMethod(step) {
-	if (step.profileProperty && step.profileProperty.source === "explicit-user-review") return "user-confirmed";
+	if (step.profileProperty && step.profileProperty.source === "explicit-user-review") {
+		return step.profileProperty.reviewAnswer && step.profileProperty.reviewAnswer.resolutionMethod || "user-confirmed";
+	}
 	if (step.profileProperty && step.profileProperty.source === "codex-semantic") return "codex-semantic";
 	if (step.profileProperty && step.profileProperty.source === "manual") return "manual";
 	if (step.profileProperty && step.profileProperty.source) return "direct-alias";

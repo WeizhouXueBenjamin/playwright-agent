@@ -16,13 +16,125 @@ async function main() {
 		await assertStopsOnUnavailableApplication(browser);
 		await assertAdvancesUnexpectedIntermediatePage(browser);
 		await assertStopsBeforeFinalSubmission(browser);
+		await assertReviewHoldKeepsRunPending(browser);
+		await assertGateReviewUsesReviewProvider(browser);
 		await assertResumesAfterReviewAnswer(browser);
 		await assertSupportsReviewSkip(browser);
 		await assertSupportsReviewManual(browser);
+		await assertManualFailureReturnsToReview(browser);
 		await assertSupportsReviewStop(browser);
 	} finally {
 		await browser.close();
 	}
+}
+
+async function assertGateReviewUsesReviewProvider(browser) {
+	const { context, page } = await openPage(browser, createReviewResolutionPageUrl());
+	try {
+		await waitForPageStable(page);
+		let reviewCalls = 0;
+		const controller = new AgentController({
+			maxCycles: 10,
+			gateStep: async ({ step }) => ({
+				type: "review-item",
+				reason: "gate-review-required",
+				step,
+				field: step.field,
+				safetyDecision: {
+					fieldIntent: "privacy-consent",
+					reason: "legal-consent-requires-user-review",
+				},
+			}),
+			reviewAnswerProvider: async () => {
+				reviewCalls += 1;
+				return { command: "stop" };
+			},
+		});
+		const result = await controller.runOnPage(page, { firstName: "Aroha" });
+
+		assert.equal(reviewCalls, 1);
+		assert.equal(result.status, "needs-review");
+		assert.equal(result.reason, "stopped-by-user");
+		assert.equal(result.reviewPrompt.fieldIntent, "privacy-consent");
+		assert.equal(await page.locator("#submitted").textContent(), "not submitted");
+	} finally {
+		await context.close();
+	}
+}
+
+async function assertManualFailureReturnsToReview(browser) {
+	const { context, page } = await openPage(browser, createReviewResolutionPageUrl());
+	try {
+		await waitForPageStable(page);
+		let reviewCalls = 0;
+		const controller = new AgentController({
+			maxCycles: 10,
+			reviewAnswerProvider: async () => {
+				reviewCalls += 1;
+				if (reviewCalls === 1) return { command: "manual" };
+				return { answer: "Yes", resolutionMethod: "user-edited" };
+			},
+		});
+		const result = await controller.runOnPage(page, {
+			firstName: "Aroha",
+			workAuthorization: "Open work visa valid until 2027",
+		});
+
+		assert.equal(reviewCalls, 2);
+		assert.equal(result.status, "awaiting-human-confirmation");
+		assert.equal(result.lifecycle.some((entry) => entry.phase === "observe-think-review-manual-unverified"), true);
+		assert.equal(await page.getByLabel("Are you legally authorized to work in New Zealand?").inputValue(), "Yes");
+		assert.equal(await page.locator("#submitted").textContent(), "not submitted");
+	} finally {
+		await context.close();
+	}
+}
+
+async function assertReviewHoldKeepsRunPending(browser) {
+	const { context, page } = await openPage(browser, createReviewResolutionPageUrl());
+	try {
+		await waitForPageStable(page);
+
+		let resolveReview;
+		const reviewStarted = [];
+		const controller = new AgentController({
+			maxCycles: 10,
+			reviewAnswerProvider: async ({ runtimeState }) => {
+				reviewStarted.push(runtimeState.currentExecutionStatus);
+				return new Promise((resolve) => {
+					resolveReview = resolve;
+				});
+			},
+		});
+		const runPromise = controller.runOnPage(page, {
+			firstName: "Aroha",
+			workAuthorization: "Open work visa valid until 2027",
+		}).catch((error) => ({ __controllerError: error }));
+
+		await waitFor(() => reviewStarted.length > 0, 2000);
+		assert.deepEqual(reviewStarted, ["review-pending"]);
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		assert.equal(typeof resolveReview, "function");
+
+		resolveReview({ answer: "Yes" });
+		let result;
+		result = await runPromise;
+		if (result && result.__controllerError) throw result.__controllerError;
+		assert.equal(result.status, "awaiting-human-confirmation");
+		assert.equal(await page.getByLabel("Are you legally authorized to work in New Zealand?").inputValue(), "Yes");
+		assert.equal(await page.locator("#submitted").textContent(), "not submitted");
+	} finally {
+		await context.close();
+	}
+}
+
+async function waitFor(predicate, timeoutMs) {
+	const started = Date.now();
+	while (Date.now() - started < timeoutMs) {
+		if (predicate()) return;
+		await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+	throw new Error("Timed out waiting for condition.");
 }
 
 async function assertStopsOnUnavailableApplication(browser) {
@@ -30,7 +142,12 @@ async function assertStopsOnUnavailableApplication(browser) {
 	try {
 		await waitForPageStable(page);
 
-		const controller = new AgentController({ maxCycles: 5 });
+		const controller = new AgentController({
+			maxCycles: 5,
+			reviewAnswerProvider: async () => {
+				throw new Error("Unavailable application must not enter field review.");
+			},
+		});
 		const result = await controller.runOnPage(page, {});
 
 		assert.equal(result.status, "needs-review");
@@ -210,7 +327,12 @@ async function assertStopsOnLoginPage(browser) {
 	try {
 		await waitForPageStable(page);
 
-		const controller = new AgentController({ maxCycles: 5 });
+		const controller = new AgentController({
+			maxCycles: 5,
+			reviewAnswerProvider: async () => {
+				throw new Error("Login page must not enter field review.");
+			},
+		});
 		const result = await controller.runOnPage(page, {});
 
 		assert.equal(result.status, "needs-review");

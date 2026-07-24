@@ -1,5 +1,7 @@
 # Review Resolution Loop
 
+> Superseded for current implementation work by `Human Review Hold and Resume.md`. This document describes the earlier review-contract milestone, most of which is already implemented.
+
 ## Context
 
 Field Answer Safety Guard has sealed the P0 correctness issue:
