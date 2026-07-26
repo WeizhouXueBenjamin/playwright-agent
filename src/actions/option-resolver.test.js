@@ -29,6 +29,21 @@ assertMatched(
 );
 
 assertMatched(
+	resolveOption(
+		[{ label: "Auckland Airport" }, { label: "Auckland Central" }, { label: "Auckland City" }],
+		"Auckland",
+		{ fieldLabel: "City/Suburb" },
+	),
+	"controlled-equivalence",
+	"Auckland City",
+	"structural-controlled-equivalence",
+);
+assertNoMatch(
+	resolveOption([{ label: "Auckland City" }], "Auckland", { fieldLabel: "School" }),
+	"below-similarity-threshold",
+);
+
+assertMatched(
 	resolveOption([{ label: "Citizen & Permanent Resident" }], "Citizen and Permanent Resident"),
 	"canonical",
 	"Citizen & Permanent Resident",

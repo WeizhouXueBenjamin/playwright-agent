@@ -44,6 +44,8 @@ assertIntent("Are you legally authorized to work in the United States?", "work-a
 assertIntent("Will you now or in the future require visa sponsorship?", "sponsorship-required");
 assertIntent("Visa type", "visa-type");
 assertIntent("I certify that the information provided is true and complete", "legal-declaration");
+assertIntent("I confirm that the information provided is accurate", "legal-declaration");
+assert.equal(classifyFieldIntent(createField("confirm-email", "text-input", "Confirm Email", "label", 0.98)).fieldIntent, "low-risk");
 assertIntent("I agree to the privacy policy", "privacy-consent");
 assertIntent("How did you hear about us?", "referral-source");
 assertIntent("Referral source", "referral-source");
@@ -265,6 +267,57 @@ assert.equal(structuredLocationMatches[1].matchedProfileProperty.value, "New Zea
 assert.equal(structuredLocationMatches[2].matchedProfileProperty.path, "location.formatted");
 assert.equal(structuredLocationMatches[2].matchedProfileProperty.value, "Wellington, New Zealand");
 assert.notEqual(structuredLocationMatches[3].matchedProfileProperty && structuredLocationMatches[3].matchedProfileProperty.source, "structured-location");
+
+const observedRegionFromCity = matchFieldsToProfile({
+	interactiveElements: [{
+		...createField("region", "selection", "State/Region", "label", 0.98),
+		options: [{ label: "Auckland" }, { label: "Wellington" }],
+	}],
+}, {
+	city: "Auckland",
+	country: "New Zealand",
+	skills: { ai: "OpenAI GPT-4" },
+}, { threshold: 1 });
+assert.equal(observedRegionFromCity[0].matchedProfileProperty.path, "city");
+assert.equal(observedRegionFromCity[0].matchedProfileProperty.value, "Auckland");
+assert.equal(observedRegionFromCity[0].matchedProfileProperty.source, "structured-location-observed-option");
+
+const unresolvedRegionDoesNotUseUnrelatedProfileValue = matchFieldsToProfile({
+	interactiveElements: [{
+		...createField("region", "selection", "State/Region", "label", 0.98),
+		options: [{ label: "Wellington" }],
+	}],
+}, {
+	city: "Auckland",
+	skills: { ai: "OpenAI GPT-4" },
+}, { threshold: 1 });
+assert.equal(unresolvedRegionDoesNotUseUnrelatedProfileValue[0].matchedProfileProperty, null);
+
+const structuredPhoneMatches = matchFieldsToProfile({
+	interactiveElements: [
+		{ ...createField("phone-country", "text-input", "Mobile", "label", 0.98), name: "day_phone_country" },
+		{ ...createField("phone-number", "text-input", "Mobile", "label", 0.98), name: "day_phone" },
+		{ ...createField("after-hours", "text-input", "A/H", "label", 0.98), name: "ah_phone" },
+	],
+}, {
+	phone: "+64 021-024-81775",
+}, { threshold: 1 });
+assert.equal(structuredPhoneMatches[0].matchedProfileProperty.value, "64");
+assert.equal(structuredPhoneMatches[0].matchedProfileProperty.source, "structured-phone");
+assert.equal(structuredPhoneMatches[1].matchedProfileProperty.value, "02102481775");
+assert.equal(structuredPhoneMatches[1].matchedProfileProperty.source, "structured-phone");
+assert.equal(structuredPhoneMatches[2].matchedProfileProperty, null);
+
+const degreeCheckboxesDoNotCoerceTextToBoolean = matchFieldsToProfile({
+	interactiveElements: [
+		createField("masters", "checkbox", "Masters Degree", "label", 0.98, "checkbox"),
+		createField("postgraduate", "checkbox", "Post Graduate Degree", "label", 0.98, "checkbox"),
+		createField("undergraduate", "checkbox", "Under Graduate Degree", "label", 0.98, "checkbox"),
+	],
+}, {
+	education: { degree: "Bachelor of Science" },
+}, { threshold: 1 });
+assert.equal(degreeCheckboxesDoNotCoerceTextToBoolean.every((match) => match.matchedProfileProperty === null), true);
 
 const unsafeWorkAuthorizationMatches = matchFieldsToProfile({
 	interactiveElements: [

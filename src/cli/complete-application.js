@@ -33,6 +33,7 @@ async function main() {
 	const profile = JSON.parse(await fs.readFile(profilePath, "utf8"));
 	const { runId, runDir } = await createRunLogDir(path.join("logs", "apply"));
 	const agent = new BrowserAIAgent({
+		maxCycles: 120,
 		channel: "chrome",
 		chromiumSandbox: true,
 		headless: false,

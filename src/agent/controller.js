@@ -475,9 +475,10 @@ async function buildOptionReviewItem(page, step, actionResult) {
 	const fallbackOptions = (optionMatch.candidates || []).map((candidate) => ({
 		label: candidate.label,
 	})).filter((option) => option.label);
-	const field = snapshot
-		? { ...step.field, options: snapshot.options }
-		: { ...step.field, options: fallbackOptions };
+	const reviewOptions = fallbackOptions.length
+		? fallbackOptions
+		: snapshot && snapshot.options || [];
+	const field = { ...step.field, options: reviewOptions };
 	const fieldIntent = classifyFieldIntent(field);
 	return {
 		field,

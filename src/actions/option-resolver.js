@@ -93,7 +93,8 @@ function normalizeOptions(options) {
 function findStructuralEquivalence(options, expectedLabel, context) {
 	const candidates = options.filter((option) => {
 		return dialCodeSuffixMatch(option, expectedLabel, context)
-			|| locationContextSuffixMatch(option, expectedLabel, context);
+			|| locationContextSuffixMatch(option, expectedLabel, context)
+			|| cityDescriptorSuffixMatch(option, expectedLabel, context);
 	});
 
 	if (!candidates.length) return {};
@@ -107,6 +108,13 @@ function findStructuralEquivalence(options, expectedLabel, context) {
 		candidates: rankTokenCandidates(options, expectedLabel),
 		reason: "structural-controlled-equivalence",
 	};
+}
+
+function cityDescriptorSuffixMatch(option, expectedLabel, context = {}) {
+	const fieldLabel = normalizeOptionText(context.fieldLabel);
+	if (!/\b(city|suburb)\b/.test(fieldLabel)) return false;
+	const expected = normalizeOptionText(expectedLabel);
+	return Boolean(expected) && option.canonicalLabel === `${expected} city`;
 }
 
 function dialCodeSuffixMatch(option, expectedLabel, context = {}) {

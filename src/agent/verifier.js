@@ -50,7 +50,18 @@ async function verifyAction(page, step, actionResult = {}) {
 
 	const actual = await locator.inputValue();
 	const expected = String(step.actionValue);
-	return buildVerificationResult(actual === expected, expected, actual, strategy);
+	const matched = isStructuredPhoneStep(step)
+		? normalizePhoneValue(actual) === normalizePhoneValue(expected)
+		: actual === expected;
+	return buildVerificationResult(matched, expected, actual, strategy);
+}
+
+function isStructuredPhoneStep(step) {
+	return step && step.profileProperty && step.profileProperty.source === "structured-phone";
+}
+
+function normalizePhoneValue(value) {
+	return String(value || "").replace(/\D/g, "");
 }
 
 async function readNativeSelectedOption(locator) {

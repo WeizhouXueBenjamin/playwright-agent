@@ -47,20 +47,55 @@ function resolveLocationProfileProperty(field, profile = {}) {
 		],
 	};
 
-	const value = firstPresent(values[intent] || []);
-	if (!value) return null;
+	let value = firstPresent(values[intent] || []);
+	let regionFromObservedCity = false;
+	if (!value && intent === LOCATION_INTENTS.REGION) {
+		const city = firstPresent([location.city, profile.city]);
+		if (city && hasExactObservedOption(field.options, city)) {
+			value = city;
+			regionFromObservedCity = true;
+		}
+	}
+	if (!value) {
+		if (intent === LOCATION_INTENTS.UNKNOWN) return null;
+		return unresolvedLocationProperty(intent);
+	}
 
 	const result = {
-		path: getLocationPath(intent, profile, location),
+		path: regionFromObservedCity ? getCityPath(profile, location) : getLocationPath(intent, profile, location),
 		value,
 		valueType: typeof value,
 		valuePresent: true,
 		locationIntent: intent,
-		source: "structured-location",
+		source: regionFromObservedCity ? "structured-location-observed-option" : "structured-location",
 	};
 	const country = firstPresent([location.country, profile.country]);
 	if (intent === LOCATION_INTENTS.CITY && country) result.selectionContext = { country };
 	return result;
+}
+
+function hasExactObservedOption(options, expected) {
+	const normalizedExpected = normalizeLocationText(expected);
+	return (options || []).some((option) => normalizeLocationText(option && (option.label || option.text)) === normalizedExpected);
+}
+
+function unresolvedLocationProperty(locationIntent) {
+	return {
+		path: "location",
+		value: "",
+		valueType: "string",
+		valuePresent: false,
+		locationIntent,
+		source: "structured-location-unresolved",
+	};
+}
+
+function getCityPath(profile, location) {
+	return location.city ? "location.city" : profile.city ? "city" : "location";
+}
+
+function normalizeLocationText(value) {
+	return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
 function getLocationPath(intent, profile, location) {

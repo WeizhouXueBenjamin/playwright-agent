@@ -98,6 +98,13 @@ assert.deepEqual(
 	},
 );
 
+assert.equal(evaluateActionTargetPolicy({
+	id: "confirm-email",
+	kind: "text-input",
+	label: { text: "Confirm Email", source: "label", confidence: 1 },
+	disabled: false,
+}).allowed, true);
+
 const pagePolicy = evaluatePagePolicy({
 	interactiveElements: [continueButton, submitButton],
 });

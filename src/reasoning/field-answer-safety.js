@@ -80,7 +80,8 @@ const INTENT_RULES = [
 		intent: FIELD_INTENTS.LEGAL_DECLARATION,
 		patterns: [
 			/\blegal\s+(declaration|statement|acknowledg(e)?ment)\b/,
-			/\b(declare|certify|attest|confirm)\b/,
+			/\b(declare|certify|attest)\b/,
+			/\bconfirm.{0,80}\b(true|truthful|accurate|accuracy|complete|correct)\b/,
 			/\bterms\s+(and\s+conditions|of\s+use)\b/,
 			/\bbackground\s+check\b/,
 			/\bcriminal\s+(record|history)\b/,

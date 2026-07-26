@@ -35,9 +35,10 @@ const IRREVERSIBLE_ACTION_PATTERNS = [
 
 function evaluateActionTargetPolicy(target) {
 	const label = getControlLabel(target);
+	const isCommandControl = target && ["button", "link"].includes(target.kind);
 	const isApplicationEntryLink = target && target.kind === "link" && matchesAny(label, APPLICATION_ENTRY_LINK_PATTERNS);
-	const isFinalSubmit = matchesAny(label, FINAL_SUBMIT_PATTERNS);
-	const isIrreversible = matchesAny(label, IRREVERSIBLE_ACTION_PATTERNS);
+	const isFinalSubmit = isCommandControl && matchesAny(label, FINAL_SUBMIT_PATTERNS);
+	const isIrreversible = isCommandControl && matchesAny(label, IRREVERSIBLE_ACTION_PATTERNS);
 
 	if (isApplicationEntryLink) {
 		return {

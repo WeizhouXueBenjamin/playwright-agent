@@ -15,8 +15,31 @@ async function main() {
 		await assertCustomExactSelectionVerifies(browser);
 		await assertCustomDialCodeDisplayVerifiesAgainstClickedOption(browser);
 		await assertCustomPrefixMismatchFails(browser);
+		await assertStructuredPhoneNormalizationVerifies(browser);
 	} finally {
 		await browser.close();
+	}
+}
+
+async function assertStructuredPhoneNormalizationVerifies(browser) {
+	const html = "<!doctype html><label for=\"mobile\">Mobile</label><input id=\"mobile\">";
+	const { context, page } = await openPage(browser, `data:text/html,${encodeURIComponent(html)}`);
+	try {
+		await waitForPageStable(page);
+		await page.getByLabel("Mobile").fill("6402102481775");
+		const verification = await verifyAction(page, {
+			action: "fill",
+			actionValue: "+64 021-024-81775",
+			profileProperty: { path: "phone", source: "structured-phone" },
+			field: {
+				id: "mobile",
+				kind: "text-input",
+				label: { text: "Mobile", source: "label", confidence: 1 },
+			},
+		});
+		assert.equal(verification.ok, true);
+	} finally {
+		await context.close();
 	}
 }
 

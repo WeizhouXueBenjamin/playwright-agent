@@ -372,6 +372,7 @@ async function assertSearchableCityResumesWithReviewedOption(browser) {
 				const item = reviewCheckpoint.items[0];
 				assert.equal(item.fieldLabel.text, "Location (City)*");
 				assert.equal(item.type, "option-selection");
+				assert.equal(item.options.length, 3);
 				return [{ itemId: item.id, action: "select", value: selectedLabel }];
 			},
 		});
@@ -1376,7 +1377,7 @@ function createAmbiguousSearchableCityPageUrl() {
 		"<button type=\"submit\">Submit application</button></form>",
 		"<script>",
 		"const cityInput = document.querySelector('#candidate-location');",
-		"const cityOptions = ['Auckland, Auckland Region, New Zealand', 'Auckland Airport, Auckland Region, New Zealand', 'Auckland Central, Auckland Region, New Zealand'];",
+		"const cityOptions = ['Auckland, Auckland Region, New Zealand', 'Auckland Airport, Auckland Region, New Zealand', 'Auckland Central, Auckland Region, New Zealand', 'Auckland Harbour, Auckland Region, New Zealand'];",
 		"function renderCityOptions() {",
 		"  let listbox = document.querySelector('#city-listbox');",
 		"  if (!listbox) { listbox = document.createElement('div'); listbox.id = 'city-listbox'; listbox.setAttribute('role', 'listbox'); document.body.appendChild(listbox); }",

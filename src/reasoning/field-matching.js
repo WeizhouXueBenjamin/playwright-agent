@@ -2,6 +2,7 @@ const { listProfileProperties } = require("../profile/profile-properties");
 const { classifyFieldIntent, evaluateFieldAnswerSafety } = require("./field-answer-safety");
 const { buildFieldFingerprint, createReviewAnswerProfileProperty, findReviewAnswerForField } = require("../review/review-resolution");
 const { resolveLocationProfileProperty } = require("./location-resolution");
+const { resolvePhoneProfileProperty } = require("./phone-resolution");
 const { resolveWorkEligibilityProfileProperty } = require("./work-eligibility-resolution");
 const { scoreTextMatch } = require("./text-similarity");
 
@@ -84,8 +85,20 @@ function isManuallyCompletedField(field, runtimeState) {
 
 function matchDeterministicProfileValue(field, fieldAnswerSafety, profile) {
 	const candidate = resolveWorkEligibilityProfileProperty(field, profile)
+		|| resolvePhoneProfileProperty(field, profile)
 		|| resolveLocationProfileProperty(field, profile);
 	if (!candidate) return null;
+	if (!candidate.valuePresent) {
+		if (fieldAnswerSafety.riskLevel === "high") return null;
+		return {
+			field: describeField(field),
+			fieldAnswerSafety,
+			matchedProfileProperty: null,
+			confidenceScore: 0,
+			reasoning: `No explicit structured value was available for ${candidate.path}.`,
+			candidates: [],
+		};
+	}
 
 	const safetyDecision = evaluateFieldAnswerSafety(field, candidate);
 	const allowed = fieldAnswerSafety.riskLevel !== "high" || safetyDecision.allowed;
@@ -190,12 +203,20 @@ function selectRejectedCandidate(field, candidates, threshold, fieldAnswerSafety
 }
 
 function selectBestCandidate(field, candidates, threshold, fieldAnswerSafety) {
-	if (fieldAnswerSafety.riskLevel !== "high") return candidates[0];
+	if (fieldAnswerSafety.riskLevel !== "high") {
+		return candidates.find((candidate) => candidate.confidenceScore >= threshold && isControlCompatibleCandidate(field, candidate));
+	}
 
 	return candidates.find((candidate) => {
 		if (candidate.confidenceScore < threshold) return false;
+		if (!isControlCompatibleCandidate(field, candidate)) return false;
 		return evaluateFieldAnswerSafety(field, candidate).allowed;
 	});
+}
+
+function isControlCompatibleCandidate(field, candidate) {
+	if (field.kind !== "checkbox") return true;
+	return candidate.valueType === "boolean";
 }
 
 function getMatchableFields(semanticPage) {
