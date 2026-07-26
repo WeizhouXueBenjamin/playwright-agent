@@ -11,7 +11,7 @@ const { RecoveryEngine } = require("../recovery/recovery-engine");
 const { gateStepForCurrentObservation } = require("./decision-gate");
 const { classifyFieldIntent } = require("../reasoning/field-answer-safety");
 const { buildReviewCheckpoint } = require("../review/review-checkpoint");
-const { REVIEW_TYPES } = require("../review/review-types");
+const { REVIEW_ALLOWED_ACTIONS, REVIEW_TYPES } = require("../review/review-types");
 const { buildFieldFingerprint, buildReviewAnswer } = require("../review/review-resolution");
 const { StateManager } = require("../state/state-manager");
 
@@ -35,7 +35,8 @@ class AgentController {
 			try {
 				const page = await openPageInContext(context, url, this.options);
 				await waitForPageStable(page, this.options.stability);
-				return await this.runOnPage(page, profile);
+				const result = await this.runOnPage(page, profile);
+				return await this.maybeHoldForFinalReview({ page, result });
 			} finally {
 				await context.close();
 			}
@@ -47,12 +48,43 @@ class AgentController {
 			const { context, page } = await openPage(browser, url, this.options);
 			try {
 				await waitForPageStable(page, this.options.stability);
-				return await this.runOnPage(page, profile);
+				const result = await this.runOnPage(page, profile);
+				return await this.maybeHoldForFinalReview({ page, result });
 			} finally {
 				await context.close();
 			}
 		} finally {
 			await browser.close();
+		}
+	}
+
+	async maybeHoldForFinalReview({ page, result }) {
+		if (!shouldInvokeFinalReview({ page, result, finalReviewProvider: this.options.finalReviewProvider })) {
+			return result;
+		}
+
+		const abortController = new AbortController();
+		let closeReason = "";
+		const markClosed = () => {
+			closeReason = "browser-closed";
+			abortController.abort();
+		};
+		const context = page.context();
+		page.once("close", markClosed);
+		context.once("close", markClosed);
+
+		try {
+			const decision = await this.options.finalReviewProvider({
+				summary: buildFinalReviewSummary(result),
+				signal: abortController.signal,
+			});
+			if (closeReason) return attachFinalReview(result, closeReason);
+			return attachFinalReview(result, stateForFinalReviewDecision(decision));
+		} catch {
+			return attachFinalReview(result, closeReason || "stopped-by-user");
+		} finally {
+			page.off("close", markClosed);
+			context.off("close", markClosed);
 		}
 	}
 
@@ -716,6 +748,52 @@ function summarizeGateResult(gateResult) {
 		reason: gateResult.reason,
 		decisionId: gateResult.decisionId,
 		provenance: gateResult.provenance,
+	};
+}
+
+function shouldInvokeFinalReview({ page, result, finalReviewProvider }) {
+	if (typeof finalReviewProvider !== "function") return false;
+	if (!result || result.status !== "awaiting-human-confirmation") return false;
+	if (result.reason !== "final-submission-control-detected") return false;
+	const runtimeState = result.runtimeState || {};
+	if (runtimeState.pendingReviewCheckpoint) return false;
+	if (!page || page.isClosed()) return false;
+	return true;
+}
+
+function buildFinalReviewSummary(result) {
+	const runtimeState = result.runtimeState || {};
+	return {
+		status: "ready-for-review",
+		internalStatus: result.status,
+		reason: result.reason || "",
+		verifiedFields: Array.isArray(runtimeState.completedFields) ? runtimeState.completedFields.length : 0,
+		reviewDecisionsApplied: Array.isArray(runtimeState.reviewAnswers) ? runtimeState.reviewAnswers.length : 0,
+		skippedFields: Array.isArray(runtimeState.skippedFields) ? runtimeState.skippedFields.length : 0,
+		pendingReviewItems: runtimeState.pendingReviewCheckpoint && Array.isArray(runtimeState.pendingReviewCheckpoint.items)
+			? runtimeState.pendingReviewCheckpoint.items.length
+			: 0,
+		finalSubmissionTriggered: runtimeState.finalSubmissionTriggered === true,
+	};
+}
+
+function stateForFinalReviewDecision(decision = {}) {
+	const action = decision && decision.action || "";
+	if (!REVIEW_ALLOWED_ACTIONS[REVIEW_TYPES.FINAL_REVIEW].includes(action)) return "stopped-by-user";
+	if (action === "keep-open") return "manual-review-complete";
+	if (action === "finish-without-submit") return "finished-without-submit";
+	return "stopped-by-user";
+}
+
+function attachFinalReview(result, state) {
+	return {
+		...result,
+		finalReview: {
+			interactive: true,
+			state,
+			automatedActionsPerformed: false,
+			manualSubmissionOutcome: "unknown",
+		},
 	};
 }
 

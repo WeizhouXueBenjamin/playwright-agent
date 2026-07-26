@@ -17,6 +17,9 @@ async function main() {
 		await assertStopsOnUnavailableApplication(browser);
 		await assertAdvancesUnexpectedIntermediatePage(browser);
 		await assertStopsBeforeFinalSubmission(browser);
+		await assertFinalReviewProviderHoldsBrowserOwnedRun();
+		await assertFinalReviewStopPreservesBoundaryStatus();
+		await assertFinalReviewProviderDoesNotRunForFieldCheckpoint();
 		await assertReviewHoldKeepsRunPending(browser);
 		await assertNonInteractiveCheckpointAfterSafeFields(browser);
 		await assertGateReviewUsesReviewProvider(browser);
@@ -729,6 +732,85 @@ async function assertStopsBeforeFinalSubmission(browser) {
 	} finally {
 		await context.close();
 	}
+}
+
+async function assertFinalReviewProviderHoldsBrowserOwnedRun() {
+	let resolveFinalReview;
+	let providerSummary;
+	let providerSignal;
+	const controller = new AgentController({
+		maxCycles: 5,
+		finalReviewProvider: async ({ summary, signal }) => {
+			providerSummary = summary;
+			providerSignal = signal;
+			return new Promise((resolve) => {
+				resolveFinalReview = () => resolve({ action: "finish-without-submit" });
+			});
+		},
+	});
+	const runPromise = controller.run(createFinalSubmitPageUrl(), {}).catch((error) => ({ __controllerError: error }));
+
+	await waitFor(() => typeof resolveFinalReview === "function", 2000);
+	assert.equal(providerSummary.status, "ready-for-review");
+	assert.equal(providerSummary.reason, "final-submission-control-detected");
+	assert.equal(providerSummary.finalSubmissionTriggered, false);
+	assert.equal(providerSignal.aborted, false);
+
+	let settled = false;
+	runPromise.then(() => { settled = true; });
+	await Promise.resolve();
+	assert.equal(settled, false);
+
+	resolveFinalReview();
+	const result = await runPromise;
+	if (result && result.__controllerError) throw result.__controllerError;
+	assert.equal(result.status, "awaiting-human-confirmation");
+	assert.equal(result.reason, "final-submission-control-detected");
+	assert.deepEqual(result.finalReview, {
+		interactive: true,
+		state: "finished-without-submit",
+		automatedActionsPerformed: false,
+		manualSubmissionOutcome: "unknown",
+	});
+	assert.equal(result.runtimeState.finalSubmissionTriggered, false);
+}
+
+async function assertFinalReviewStopPreservesBoundaryStatus() {
+	const controller = new AgentController({
+		maxCycles: 5,
+		finalReviewProvider: async () => ({ action: "stop" }),
+	});
+
+	const result = await controller.run(createFinalSubmitPageUrl(), {});
+
+	assert.equal(result.status, "awaiting-human-confirmation");
+	assert.equal(result.reason, "final-submission-control-detected");
+	assert.deepEqual(result.finalReview, {
+		interactive: true,
+		state: "stopped-by-user",
+		automatedActionsPerformed: false,
+		manualSubmissionOutcome: "unknown",
+	});
+	assert.equal(result.runtimeState.finalSubmissionTriggered, false);
+}
+
+async function assertFinalReviewProviderDoesNotRunForFieldCheckpoint() {
+	let calls = 0;
+	const controller = new AgentController({
+		maxCycles: 5,
+		finalReviewProvider: async () => {
+			calls += 1;
+			return { action: "finish-without-submit" };
+		},
+	});
+
+	const result = await controller.run(createCheckpointReviewPageUrl(), { firstName: "Aroha" });
+
+	assert.equal(result.status, "needs-review");
+	assert.equal(result.reason, "review-checkpoint-pending");
+	assert.equal(calls, 0);
+	assert.equal(result.finalReview, undefined);
+	assert.equal(result.runtimeState.finalSubmissionTriggered, false);
 }
 
 function createCookieBannerPageUrl() {

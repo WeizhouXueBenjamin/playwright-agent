@@ -20,6 +20,11 @@ async function main() {
 		output: process.stdout,
 		errorOutput: process.stderr,
 	});
+	const finalReviewProvider = createFinalReviewProvider({
+		input: process.stdin,
+		output: process.stdout,
+		errorOutput: process.stderr,
+	});
 	const profile = JSON.parse(await fs.readFile(profilePath, "utf8"));
 	const { runId, runDir } = await createRunLogDir(path.join("logs", "apply"));
 	const agent = new BrowserAIAgent({
@@ -27,6 +32,7 @@ async function main() {
 		persistent: true,
 		userDataDir: path.resolve(".playwright", "apply-profile"),
 		reviewCheckpointProvider,
+		finalReviewProvider,
 	});
 	const result = await agent.completeJobApplication({
 		url: new URL(url).toString(),
@@ -46,8 +52,7 @@ async function main() {
 	compactArtifact.runId = runId;
 	const artifactPath = await writeJsonArtifact(runDir, "run-artifact.json", compactArtifact);
 
-	console.error(`Run artifact: ${artifactPath}`);
-	console.log(JSON.stringify(result, null, 2));
+	console.log(formatRunSummary(result, artifactPath));
 }
 
 function createReviewCheckpointProvider(options = {}) {
@@ -82,6 +87,53 @@ function createCliReviewCheckpointProvider(options = {}) {
 			rl.close();
 		}
 	};
+}
+
+function createFinalReviewProvider(options = {}) {
+	if (!options.input || options.input.isTTY !== true || !options.output || options.output.isTTY !== true) {
+		return null;
+	}
+	return createCliFinalReviewProvider(options);
+}
+
+function createCliFinalReviewProvider(options = {}) {
+	const input = options.input || process.stdin;
+	const output = options.output || process.stdout;
+	const errorOutput = options.errorOutput || process.stderr;
+	return async ({ summary, signal }) => {
+		const rl = readline.createInterface({ input, output });
+		try {
+			errorOutput.write(formatFinalReviewSummary(summary));
+			while (true) {
+				const command = await askFinalReviewQuestion(rl, "[K] Keep open [F] Finish without submitting [Q] Stop and close browser > ", signal);
+				const normalized = String(command || "").trim().toLowerCase();
+				if (!command || normalized === "q" || normalized === "quit" || normalized === "stop") return { action: "stop" };
+				if (normalized === "f" || normalized === "finish") return { action: "finish-without-submit" };
+				if (normalized === "k" || normalized === "keep-open" || normalized === "keep") {
+					errorOutput.write([
+						"",
+						"Manual review mode active.",
+						"The agent will perform no further browser actions.",
+						"Review or manually submit in the browser, then press Enter here to finish and close.",
+						"",
+					].join("\n"));
+					await askFinalReviewQuestion(rl, "", signal);
+					return { action: "keep-open" };
+				}
+				errorOutput.write("Choose K, F, or Q.\n");
+			}
+		} finally {
+			rl.close();
+		}
+	};
+}
+
+async function askFinalReviewQuestion(rl, prompt, signal) {
+	try {
+		return await rl.question(prompt, { signal });
+	} catch {
+		return "";
+	}
 }
 
 async function askCheckpointItem({ rl, item, errorOutput }) {
@@ -176,6 +228,24 @@ async function askForManualCompletion(rl, errorOutput) {
 	errorOutput.write("Complete this field in the open browser, then press Enter here.\n");
 	await rl.question("");
 	return { action: "manual" };
+}
+
+function formatFinalReviewSummary(summary = {}) {
+	return [
+		"",
+		"Application ready for final review",
+		"",
+		`Verified fields: ${Number(summary.verifiedFields || 0)}`,
+		`Review decisions applied: ${Number(summary.reviewDecisionsApplied || 0)}`,
+		`Skipped fields: ${Number(summary.skippedFields || 0)}`,
+		`Pending review items: ${Number(summary.pendingReviewItems || 0)}`,
+		"",
+		"Automation is complete and permanently paused for this run.",
+		`Final submission was ${summary.finalSubmissionTriggered === true ? "triggered" : "not triggered"}.`,
+		"The browser remains open for manual inspection.",
+		"",
+		"",
+	].join("\n");
 }
 
 function formatCheckpointSummary(reviewCheckpoint, runtimeState = {}) {
@@ -307,6 +377,7 @@ function buildCompactRunArtifact({ url, profilePath, resumePath, coverLetterPath
 				reason: gate.reason || "",
 				type: gate.type || "",
 			})),
+		...(result.finalReview ? { finalReview: result.finalReview } : {}),
 		finalSubmissionTriggered: runtimeState.finalSubmissionTriggered === true,
 		submitted: runtimeState.finalSubmissionTriggered === true,
 		metrics: buildRunMetrics({ runtimeState }),
@@ -373,16 +444,68 @@ function buildRunMetrics({ runtimeState }) {
 	};
 }
 
+function formatRunSummary(result = {}, artifactPath = "") {
+	const runtimeState = result.runtimeState || {};
+	const completedFields = Array.isArray(runtimeState.completedFields) ? runtimeState.completedFields : [];
+	const skippedFields = Array.isArray(runtimeState.skippedFields) ? runtimeState.skippedFields : [];
+	const reviewAnswers = Array.isArray(runtimeState.reviewAnswers) ? runtimeState.reviewAnswers : [];
+	const pendingItems = runtimeState.pendingReviewCheckpoint && Array.isArray(runtimeState.pendingReviewCheckpoint.items)
+		? runtimeState.pendingReviewCheckpoint.items.length
+		: 0;
+	const status = result.productStatus || normalizeProductStatus(result);
+	const lines = [
+		"",
+		"Application run complete",
+		`Status: ${status}`,
+		`Reason: ${formatRunReason(result.reason)}`,
+		`Verified fields: ${completedFields.length}`,
+		`Review decisions applied: ${reviewAnswers.length}`,
+		`Skipped fields: ${skippedFields.length}`,
+		`Pending review items: ${pendingItems}`,
+		`Final submission: ${runtimeState.finalSubmissionTriggered === true ? "triggered" : "not triggered"}`,
+	];
+	if (artifactPath) lines.push(`Run artifact: ${artifactPath}`);
+	return lines.join("\n");
+}
+
+function formatRunReason(reason) {
+	const normalized = String(reason || "").trim();
+	if (normalized === "final-submission-control-detected") return "stopped before final submission";
+	if (!normalized) return "run completed";
+	return truncateTerminalText(normalized, 240);
+}
+
+function formatCliError(error) {
+	const name = error && error.name && error.name !== "Error" ? `${error.name}: ` : "";
+	const message = error && error.message ? error.message : String(error || "Unknown error");
+	return [
+		"Application run failed",
+		`Reason: ${name}${truncateTerminalText(message, 320)}`,
+		"Set APPLY_DEBUG=1 to print the stack trace.",
+	].join("\n");
+}
+
+function truncateTerminalText(value, maxLength) {
+	const normalized = String(value || "").replace(/\s+/g, " ").trim();
+	if (normalized.length <= maxLength) return normalized;
+	return `${normalized.slice(0, maxLength - 3)}...`;
+}
+
 if (require.main === module) {
 	main().catch((error) => {
-		console.error(error);
+		console.error(process.env.APPLY_DEBUG === "1" ? error && error.stack || error : formatCliError(error));
 		process.exitCode = 1;
 	});
 }
 
 module.exports = {
 	buildCompactRunArtifact,
+	createCliFinalReviewProvider,
 	createCliReviewCheckpointProvider,
+	createFinalReviewProvider,
 	createReviewCheckpointProvider,
+	formatFinalReviewSummary,
+	formatCliError,
+	formatRunSummary,
 	normalizeProductStatus,
 };

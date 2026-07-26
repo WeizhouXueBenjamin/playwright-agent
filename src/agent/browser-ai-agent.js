@@ -28,6 +28,7 @@ class BrowserAIAgent {
 			runtimeState: result.runtimeState,
 			decisionLog: buildDecisionLog(result),
 			lifecycle: result.lifecycle,
+			finalReview: result.finalReview || null,
 		};
 	}
 }
