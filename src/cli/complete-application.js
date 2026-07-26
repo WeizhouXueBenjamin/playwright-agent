@@ -71,18 +71,20 @@ function createCliReviewCheckpointProvider(options = {}) {
 		try {
 			errorOutput.write(formatCheckpointSummary(reviewCheckpoint, runtimeState));
 			const decisions = [];
-			for (const item of reviewCheckpoint.items || []) {
-				const decision = await askCheckpointItem({ rl, item, errorOutput });
+			const items = reviewCheckpoint.items || [];
+			for (let index = 0; index < items.length; index += 1) {
+				const item = items[index];
+				const decision = await askCheckpointItem({
+					rl,
+					item,
+					errorOutput,
+					position: items.length > 1 ? { index: index + 1, total: items.length } : null,
+				});
 				decisions.push({ itemId: item.id, ...decision });
 				if (decision.action === "stop") return decisions;
 			}
-			errorOutput.write(formatDecisionSummary(reviewCheckpoint, decisions));
-			while (true) {
-				const command = (await rl.question("[R]esume application [Q]uit > ")).trim().toLowerCase();
-				if (command === "q" || command === "quit") return [{ action: "stop", itemId: "__checkpoint" }];
-				if (command === "r" || command === "resume") return decisions;
-				errorOutput.write("Choose R or Q.\n");
-			}
+			errorOutput.write("\nContinuing application...\n\n");
+			return decisions;
 		} finally {
 			rl.close();
 		}
@@ -104,24 +106,8 @@ function createCliFinalReviewProvider(options = {}) {
 		const rl = readline.createInterface({ input, output });
 		try {
 			errorOutput.write(formatFinalReviewSummary(summary));
-			while (true) {
-				const command = await askFinalReviewQuestion(rl, "[K] Keep open [F] Finish without submitting [Q] Stop and close browser > ", signal);
-				const normalized = String(command || "").trim().toLowerCase();
-				if (!command || normalized === "q" || normalized === "quit" || normalized === "stop") return { action: "stop" };
-				if (normalized === "f" || normalized === "finish") return { action: "finish-without-submit" };
-				if (normalized === "k" || normalized === "keep-open" || normalized === "keep") {
-					errorOutput.write([
-						"",
-						"Manual review mode active.",
-						"The agent will perform no further browser actions.",
-						"Review or manually submit in the browser, then press Enter here to finish and close.",
-						"",
-					].join("\n"));
-					await askFinalReviewQuestion(rl, "", signal);
-					return { action: "keep-open" };
-				}
-				errorOutput.write("Choose K, F, or Q.\n");
-			}
+			await askFinalReviewQuestion(rl, "", signal);
+			return { action: "keep-open" };
 		} finally {
 			rl.close();
 		}
@@ -136,8 +122,8 @@ async function askFinalReviewQuestion(rl, prompt, signal) {
 	}
 }
 
-async function askCheckpointItem({ rl, item, errorOutput }) {
-	errorOutput.write(formatCheckpointItem(item));
+async function askCheckpointItem({ rl, item, errorOutput, position = null }) {
+	errorOutput.write(formatCheckpointItem(item, position));
 	while (true) {
 		const command = (await rl.question(promptForItem(item))).trim();
 		const decision = await parseItemDecision({ rl, item, command, errorOutput });
@@ -154,9 +140,7 @@ async function parseItemDecision({ rl, item, command, errorOutput }) {
 			const optionIndex = Number(normalized);
 			if (Number.isInteger(optionIndex) && optionIndex >= 1 && optionIndex <= item.options.length) {
 				const selectedOption = item.options[optionIndex - 1];
-				const confirm = (await rl.question(`Authorize selecting "${selectedOption.label}" for this exact current statement and run? [y/N] `)).trim().toLowerCase();
-				if (confirm === "y" || confirm === "yes") return { action: "authorize", value: selectedOption.label };
-				return null;
+				return { action: "authorize", value: selectedOption.label };
 			}
 			if (normalized === "m" || normalized === "manual") return askForManualCompletion(rl, errorOutput);
 			if (normalized === "d" || normalized === "decline") return { action: "decline" };
@@ -170,9 +154,7 @@ async function parseItemDecision({ rl, item, command, errorOutput }) {
 			return null;
 		}
 		if (normalized === "a" || normalized === "authorize") {
-			const confirm = (await rl.question("Authorize this exact current statement for this run? [y/N] ")).trim().toLowerCase();
-			if (confirm === "y" || confirm === "yes") return { action: "authorize" };
-			return null;
+			return { action: "authorize" };
 		}
 		if (normalized === "d" || normalized === "decline") return { action: "decline" };
 		errorOutput.write("Choose A, D, or Q.\n");
@@ -214,13 +196,10 @@ async function parseItemDecision({ rl, item, command, errorOutput }) {
 		return null;
 	}
 
-	if (normalized === "i" || normalized === "input" || normalized === "provide-value") {
-		const value = (await rl.question("Value > ")).trim();
-		return value ? { action: "provide-value", value } : null;
-	}
 	if (normalized === "s" || normalized === "skip") return { action: "skip" };
 	if (normalized === "m" || normalized === "manual") return askForManualCompletion(rl, errorOutput);
-	errorOutput.write("Choose I, M, S, or Q.\n");
+	if (command) return { action: "provide-value", value: command };
+	errorOutput.write("Enter a value, M, S, or Q.\n");
 	return null;
 }
 
@@ -233,82 +212,48 @@ async function askForManualCompletion(rl, errorOutput) {
 function formatFinalReviewSummary(summary = {}) {
 	return [
 		"",
-		"Application ready for final review",
+		"Ready for final review",
 		"",
-		`Verified fields: ${Number(summary.verifiedFields || 0)}`,
-		`Review decisions applied: ${Number(summary.reviewDecisionsApplied || 0)}`,
-		`Skipped fields: ${Number(summary.skippedFields || 0)}`,
-		`Pending review items: ${Number(summary.pendingReviewItems || 0)}`,
+		"Browser is open.",
+		"The agent is paused and will not submit.",
 		"",
-		"Automation is complete and permanently paused for this run.",
-		`Final submission was ${summary.finalSubmissionTriggered === true ? "triggered" : "not triggered"}.`,
-		"The browser remains open for manual inspection.",
-		"",
+		"Review or submit manually, then press Enter to finish.",
 		"",
 	].join("\n");
 }
 
 function formatCheckpointSummary(reviewCheckpoint, runtimeState = {}) {
-	return [
-		"\nHuman review checkpoint",
-		"",
-		"Completed automatically:",
-		`- ${(runtimeState.completedFields || []).length} verified fields`,
-		`- 0 final submission actions`,
-		"",
-		"Pending review:",
-		...(reviewCheckpoint.items || []).map((item, index) => `${index + 1}. ${item.fieldLabel.text} - ${item.type}`),
-		"",
-		"The browser remains open. No page actions will occur until you confirm the batch.",
-		"",
-	].join("\n");
+	const count = (reviewCheckpoint.items || []).length;
+	if (count <= 1) return "\n";
+	return `\n${count} items need your input\n\n`;
 }
 
-function formatCheckpointItem(item) {
+function formatCheckpointItem(item, position = null) {
 	const lines = [
-		`[${item.id}] ${item.fieldLabel.text}`,
-		`Type: ${item.type}`,
-		`Current state: ${formatCurrentState(item.fieldState.currentValue)}`,
-		`Agent assessment: ${item.assessment}`,
+		position ? `${position.index}/${position.total} ${item.fieldLabel.text}` : item.fieldLabel.text,
 	];
 	if (item.proposedValue) lines.push(`Suggested answer: ${item.proposedValue}`);
 	if (item.options && item.options.length) {
-		lines.push("Options:");
-		item.options.forEach((option, index) => lines.push(`[${index + 1}] ${option.label}`));
+		item.options.forEach((option, index) => lines.push(`${index + 1}. ${option.label}`));
+	}
+	if (item.type === REVIEW_TYPES.CONSENT_AUTHORIZATION && !(item.options || []).length) {
+		lines.push("[A] Authorize", "[D] Decline");
 	}
 	return `${lines.join("\n")}\n`;
 }
 
 function promptForItem(item) {
 	if (item.type === REVIEW_TYPES.CONSENT_AUTHORIZATION && (item.options || []).length) {
-		return "Option number, [M]anual, [D]ecline, [Q]uit > ";
+		return "> ";
 	}
 	if (item.type === REVIEW_TYPES.CONSENT_AUTHORIZATION && item.controlType === "selection") {
 		return "[M]anual [D]ecline [Q]uit > ";
 	}
-	if (item.type === REVIEW_TYPES.CONSENT_AUTHORIZATION) return "[A]uthorize [D]ecline [Q]uit > ";
+	if (item.type === REVIEW_TYPES.CONSENT_AUTHORIZATION) return "> ";
 	if (item.type === REVIEW_TYPES.CONFIRM_PROPOSED_VALUE) return "[C]onfirm [R]eplace [M]anual [S]kip [Q]uit > ";
-	if (item.type === REVIEW_TYPES.OPTION_SELECTION) return "Option number, [P]refer not, [M]anual, [S]kip, [Q]uit > ";
+	if (item.type === REVIEW_TYPES.OPTION_SELECTION) return "> ";
 	if (item.type === REVIEW_TYPES.FILE_REQUIRED) return "[F]ile path [M]anual [S]kip [Q]uit > ";
-	return "[I]nput value [M]anual [S]kip [Q]uit > ";
-}
-
-function formatDecisionSummary(reviewCheckpoint, decisions) {
-	const lines = ["", "Review decisions", ""];
-	for (const decision of decisions) {
-		const item = (reviewCheckpoint.items || []).find((candidate) => candidate.id === decision.itemId);
-		if (!item) continue;
-		lines.push(`${item.id}. ${item.fieldLabel.text}: ${decision.action}`);
-	}
-	lines.push("");
-	return lines.join("\n");
-}
-
-function formatCurrentState(value) {
-	if (Array.isArray(value)) return value.length ? value.join(", ") : "Empty";
-	if (value === true) return "Selected";
-	if (value === false) return "Not selected";
-	return value ? String(value) : "Empty";
+	return "> ";
 }
 
 function normalizeProductStatus(result) {

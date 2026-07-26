@@ -21,12 +21,12 @@ async function main() {
 	assertCompactCliError();
 	assertFinalReviewArtifactIsBounded();
 	assertFinalReviewSummaryIsBounded();
-	await assertFinalReviewFinishReturnsLifecycleOnly();
-	await assertFinalReviewKeepOpenWaitsForAcknowledgement();
-	await assertFinalReviewStopReturnsLifecycleOnly();
+	await assertFinalReviewOpensAndWaitsForAcknowledgement();
 	await assertCheckpointConsentProviderUsesTypedActions();
-	await assertCustomConsentRequiresOptionAndAuthorization();
-	await assertCheckpointSummaryQuitReturnsStop();
+	await assertCustomConsentRequiresOnlyOptionSelection();
+	await assertManualValueCanBeEnteredDirectly();
+	await assertOptionSelectionCanBeEnteredDirectly();
+	await assertCheckpointQuitStillReturnsStop();
 }
 
 function buildFinalReviewSummaryFixture() {
@@ -81,40 +81,14 @@ function assertFinalReviewArtifactIsBounded() {
 
 function assertFinalReviewSummaryIsBounded() {
 	const text = formatFinalReviewSummary(buildFinalReviewSummaryFixture());
-	assert.match(text, /Application ready for final review/);
-	assert.match(text, /Automation is complete and permanently paused/);
-	assert.match(text, /Final submission was not triggered/);
-	assert.match(text, /\[K\] Keep open/);
-	assert.doesNotMatch(text, /Submit application|Accept and submit|runtimeState|Aroha|65000/i);
+	assert.match(text, /Ready for final review/);
+	assert.match(text, /Browser is open/);
+	assert.match(text, /The agent is paused and will not submit/);
+	assert.match(text, /Review or submit manually, then press Enter to finish/);
+	assert.doesNotMatch(text, /\[K\] Keep open|\[F\]|Final submission was|runtimeState|Aroha|65000/i);
 }
 
-async function assertFinalReviewFinishReturnsLifecycleOnly() {
-	const { provider, input, output, errorOutput } = makeFinalReviewProvider();
-	const decisionPromise = provider({
-		summary: buildFinalReviewSummaryFixture(),
-		signal: new AbortController().signal,
-	});
-
-	input.write("f\n");
-	const decision = await decisionPromise;
-	assert.deepEqual(decision, { action: "finish-without-submit" });
-	cleanupStreams(input, output, errorOutput);
-}
-
-async function assertFinalReviewStopReturnsLifecycleOnly() {
-	const { provider, input, output, errorOutput } = makeFinalReviewProvider();
-	const decisionPromise = provider({
-		summary: buildFinalReviewSummaryFixture(),
-		signal: new AbortController().signal,
-	});
-
-	input.write("q\n");
-	const decision = await decisionPromise;
-	assert.deepEqual(decision, { action: "stop" });
-	cleanupStreams(input, output, errorOutput);
-}
-
-async function assertFinalReviewKeepOpenWaitsForAcknowledgement() {
+async function assertFinalReviewOpensAndWaitsForAcknowledgement() {
 	const { provider, input, output, errorOutput, readErrorOutput } = makeFinalReviewProvider();
 	const decisionPromise = provider({
 		summary: buildFinalReviewSummaryFixture(),
@@ -123,10 +97,10 @@ async function assertFinalReviewKeepOpenWaitsForAcknowledgement() {
 	let settled = false;
 	decisionPromise.then(() => { settled = true; });
 
-	input.write("k\n");
-	await waitFor(() => readErrorOutput().includes("Manual review mode active"), 2000);
+	await waitFor(() => readErrorOutput().includes("Ready for final review"), 2000);
 	assert.equal(settled, false);
-	assert.match(readErrorOutput(), /Manual review mode active/);
+	assert.match(readErrorOutput(), /Browser is open/);
+	assert.doesNotMatch(readErrorOutput(), /\[K\] Keep open|\[F\] Finish|\[Q\]/);
 
 	input.write("\n");
 	const decision = await decisionPromise;
@@ -229,26 +203,31 @@ async function assertCheckpointConsentProviderUsesTypedActions() {
 		runtimeState: { completedFields: [{ fieldId: "first" }] },
 	});
 
-	input.write("a\ny\nr\n");
+	input.write("a\n");
 	const decisions = await decisionsPromise;
 
 	assert.deepEqual(decisions, [{ itemId: "review-privacy", action: "authorize" }]);
-	assert.match(reviewText, /Recruitment Privacy Policy - consent-authorization/);
-	assert.match(terminalText, /\[A\]uthorize \[D\]ecline \[Q\]uit/);
-	assert.doesNotMatch(terminalText, /Edit|Accept|Submit/i);
+	assert.match(reviewText, /Recruitment Privacy Policy/);
+	assert.match(reviewText, /\[A\] Authorize/);
+	assert.match(reviewText, /\[D\] Decline/);
+	assert.match(reviewText, /Continuing application/);
+	assert.doesNotMatch(reviewText, /consent-authorization|Review decisions|\[R\]esume|Authorize this exact/i);
+	assert.doesNotMatch(terminalText, /Edit|Accept|Submit|Authorize this exact|Resume/i);
 	input.destroy();
 	output.destroy();
 	errorOutput.destroy();
 }
 
-async function assertCustomConsentRequiresOptionAndAuthorization() {
+async function assertCustomConsentRequiresOnlyOptionSelection() {
 	const input = new PassThrough();
 	input.isTTY = true;
 	const output = new PassThrough();
 	output.isTTY = true;
 	const errorOutput = new PassThrough();
 	let terminalText = "";
+	let reviewText = "";
 	output.on("data", (chunk) => { terminalText += chunk.toString(); });
+	errorOutput.on("data", (chunk) => { reviewText += chunk.toString(); });
 	const provider = createReviewCheckpointProvider({ input, output, errorOutput });
 	const reviewCheckpoint = {
 		id: "checkpoint-custom-consent",
@@ -264,21 +243,104 @@ async function assertCustomConsentRequiresOptionAndAuthorization() {
 	};
 	const decisionsPromise = provider({ reviewCheckpoint, runtimeState: { completedFields: [] } });
 
-	input.write("1\ny\nr\n");
+	input.write("1\n");
 	const decisions = await decisionsPromise;
 	assert.deepEqual(decisions, [{
 		itemId: "review-privacy",
 		action: "authorize",
 		value: "Acknowledge/Confirm",
 	}]);
-	assert.match(terminalText, /Option number/);
-	assert.match(terminalText, /Authorize selecting "Acknowledge\/Confirm"/);
+	assert.match(reviewText, /Recruitment Privacy Policy/);
+	assert.match(reviewText, /1\. Acknowledge\/Confirm/);
+	assert.match(reviewText, /Continuing application/);
+	assert.doesNotMatch(terminalText, /Authorize selecting|y\/N|Resume/i);
 	input.destroy();
 	output.destroy();
 	errorOutput.destroy();
 }
 
-async function assertCheckpointSummaryQuitReturnsStop() {
+async function assertManualValueCanBeEnteredDirectly() {
+	const input = new PassThrough();
+	input.isTTY = true;
+	const output = new PassThrough();
+	output.isTTY = true;
+	const errorOutput = new PassThrough();
+	let terminalText = "";
+	let reviewText = "";
+	output.on("data", (chunk) => { terminalText += chunk.toString(); });
+	errorOutput.on("data", (chunk) => { reviewText += chunk.toString(); });
+	const provider = createReviewCheckpointProvider({ input, output, errorOutput });
+	const reviewCheckpoint = {
+		id: "checkpoint-manual-value",
+		items: [{
+			id: "review-value",
+			type: "manual-value-required",
+			fieldLabel: { text: "Salary expectation" },
+			fieldState: { currentValue: "" },
+			assessment: "Explicit value required.",
+			options: [],
+			allowedActions: ["provide-value", "manual", "skip", "stop"],
+		}],
+	};
+	const decisionsPromise = provider({ reviewCheckpoint, runtimeState: { completedFields: [] } });
+
+	input.write("65-75k\n");
+	const decisions = await decisionsPromise;
+	assert.deepEqual(decisions, [{ itemId: "review-value", action: "provide-value", value: "65-75k" }]);
+	assert.match(reviewText, /Salary expectation/);
+	assert.match(reviewText, /Continuing application/);
+	assert.doesNotMatch(terminalText, /\[I\]nput value|Value >|\[R\]esume/i);
+	input.destroy();
+	output.destroy();
+	errorOutput.destroy();
+}
+
+async function assertOptionSelectionCanBeEnteredDirectly() {
+	const input = new PassThrough();
+	input.isTTY = true;
+	const output = new PassThrough();
+	output.isTTY = true;
+	const errorOutput = new PassThrough();
+	let terminalText = "";
+	let reviewText = "";
+	output.on("data", (chunk) => { terminalText += chunk.toString(); });
+	errorOutput.on("data", (chunk) => { reviewText += chunk.toString(); });
+	const provider = createReviewCheckpointProvider({ input, output, errorOutput });
+	const reviewCheckpoint = {
+		id: "checkpoint-location",
+		items: [{
+			id: "review-location",
+			type: "option-selection",
+			fieldLabel: { text: "Location" },
+			fieldState: { currentValue: "" },
+			assessment: "Choose one of the observed options.",
+			options: [
+				{ label: "Auckland, Auckland Region, New Zealand" },
+				{ label: "Auckland Airport, Auckland Region, New Zealand" },
+				{ label: "Auckland Central, Auckland Region, New Zealand" },
+			],
+			allowedActions: ["select", "manual", "skip", "stop"],
+		}],
+	};
+	const decisionsPromise = provider({ reviewCheckpoint, runtimeState: { completedFields: [] } });
+
+	input.write("1\n");
+	const decisions = await decisionsPromise;
+	assert.deepEqual(decisions, [{
+		itemId: "review-location",
+		action: "select",
+		value: "Auckland, Auckland Region, New Zealand",
+	}]);
+	assert.match(reviewText, /Location/);
+	assert.match(reviewText, /1\. Auckland, Auckland Region, New Zealand/);
+	assert.match(reviewText, /Continuing application/);
+	assert.doesNotMatch(terminalText, /Option number|Resume/i);
+	input.destroy();
+	output.destroy();
+	errorOutput.destroy();
+}
+
+async function assertCheckpointQuitStillReturnsStop() {
 	const input = new PassThrough();
 	input.isTTY = true;
 	const output = new PassThrough();
@@ -299,9 +361,9 @@ async function assertCheckpointSummaryQuitReturnsStop() {
 	};
 	const decisionsPromise = provider({ reviewCheckpoint, runtimeState: { completedFields: [] } });
 
-	input.write("i\n120000\nq\n");
+	input.write("q\n");
 	const decisions = await decisionsPromise;
-	assert.deepEqual(decisions, [{ itemId: "__checkpoint", action: "stop" }]);
+	assert.deepEqual(decisions, [{ itemId: "review-value", action: "stop" }]);
 	input.destroy();
 	output.destroy();
 	errorOutput.destroy();
