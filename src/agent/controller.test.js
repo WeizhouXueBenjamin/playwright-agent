@@ -14,6 +14,9 @@ async function main() {
 		await assertRecoveryRetriesFailedClick(browser);
 		await assertAdaptsThroughCookieBanner(browser);
 		await assertStopsOnLoginPage(browser);
+		await assertManualLoginPauseResumesAndReobserves(browser);
+		await assertManualLoginStopsAfterTwoResumeAttempts(browser);
+		await assertManualLoginBrowserCloseStopsSafely(browser);
 		await assertStopsOnUnavailableApplication(browser);
 		await assertAdvancesUnexpectedIntermediatePage(browser);
 		await assertStopsBeforeFinalSubmission(browser);
@@ -734,6 +737,96 @@ async function assertStopsBeforeFinalSubmission(browser) {
 	}
 }
 
+async function assertManualLoginPauseResumesAndReobserves(browser) {
+	const { context, page } = await openPage(browser, createRecoverableLoginPageUrl());
+	try {
+		await waitForPageStable(page);
+		let resumeLogin;
+		const controller = new AgentController({
+			maxCycles: 8,
+			manualLoginProvider: async () => new Promise((resolve) => {
+				resumeLogin = () => resolve({ action: "resume" });
+			}),
+		});
+		const runPromise = controller.runOnPage(page, { firstName: "Aroha" });
+
+		await waitFor(() => typeof resumeLogin === "function", 2000);
+		let settled = false;
+		runPromise.then(() => { settled = true; });
+		await Promise.resolve();
+		assert.equal(settled, false);
+		await page.evaluate(() => {
+			document.querySelector("#login").remove();
+			document.querySelector("#application").hidden = false;
+		});
+		resumeLogin();
+
+		const result = await runPromise;
+		assert.equal(result.status, "awaiting-human-confirmation");
+		assert.equal(await page.getByLabel("First name").inputValue(), "Aroha");
+		assert.deepEqual(result.lifecycle.find((entry) => entry.manualIntervention).manualIntervention, {
+			type: "manual-login",
+			outcome: "resumed",
+			attempts: 1,
+		});
+		assert.equal(result.runtimeState.finalSubmissionTriggered, false);
+	} finally {
+		await context.close();
+	}
+}
+
+async function assertManualLoginStopsAfterTwoResumeAttempts(browser) {
+	const { context, page } = await openPage(browser, createLoginPageUrl());
+	try {
+		await waitForPageStable(page);
+		let calls = 0;
+		const controller = new AgentController({
+			maxCycles: 8,
+			manualLoginProvider: async () => {
+				calls += 1;
+				return { action: "resume" };
+			},
+		});
+		const result = await controller.runOnPage(page, {});
+
+		assert.equal(calls, 2);
+		assert.equal(result.status, "needs-review");
+		assert.equal(result.reason, "login-required");
+		assert.deepEqual(result.lifecycle.at(-1).manualIntervention, {
+			type: "manual-login",
+			outcome: "stopped",
+			attempts: 2,
+		});
+	} finally {
+		await context.close();
+	}
+}
+
+async function assertManualLoginBrowserCloseStopsSafely(browser) {
+	const { context, page } = await openPage(browser, createLoginPageUrl());
+	try {
+		await waitForPageStable(page);
+		let providerStarted = false;
+		const controller = new AgentController({
+			maxCycles: 5,
+			manualLoginProvider: async ({ signal }) => new Promise((resolve) => {
+				providerStarted = true;
+				signal.addEventListener("abort", () => resolve({ action: "stop" }), { once: true });
+			}),
+		});
+		const runPromise = controller.runOnPage(page, {});
+
+		await waitFor(() => providerStarted, 2000);
+		await page.close();
+		const result = await runPromise;
+		assert.equal(result.status, "needs-review");
+		assert.equal(result.reason, "login-required");
+		assert.equal(result.lifecycle.at(-1).manualIntervention.outcome, "stopped");
+	} finally {
+		await context.close();
+	}
+}
+
 async function assertFinalReviewProviderHoldsBrowserOwnedRun() {
 	let resolveFinalReview;
 	let providerSummary;
@@ -958,6 +1051,30 @@ function createFinalSubmitPageUrl() {
 		"<button type=\"submit\">Submit application</button>",
 		"</form>",
 		"<div id=\"submitted\">not submitted</div>",
+		"</body>",
+		"</html>",
+	].join("");
+
+	return `data:text/html,${encodeURIComponent(html)}`;
+}
+
+function createRecoverableLoginPageUrl() {
+	const html = [
+		"<!doctype html>",
+		"<html>",
+		"<body>",
+		"<form id=\"login\">",
+		"<label for=\"email\">Email</label>",
+		"<input id=\"email\" type=\"email\">",
+		"<label for=\"password\">Password</label>",
+		"<input id=\"password\" type=\"password\">",
+		"<button type=\"submit\">Sign in</button>",
+		"</form>",
+		"<form id=\"application\" hidden>",
+		"<label for=\"first\">First name</label>",
+		"<input id=\"first\" name=\"firstName\">",
+		"<button type=\"submit\">Submit application</button>",
+		"</form>",
 		"</body>",
 		"</html>",
 	].join("");

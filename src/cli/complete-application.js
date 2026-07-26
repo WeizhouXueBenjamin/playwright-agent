@@ -20,6 +20,11 @@ async function main() {
 		output: process.stdout,
 		errorOutput: process.stderr,
 	});
+	const manualLoginProvider = createManualLoginProvider({
+		input: process.stdin,
+		output: process.stdout,
+		errorOutput: process.stderr,
+	});
 	const finalReviewProvider = createFinalReviewProvider({
 		input: process.stdin,
 		output: process.stdout,
@@ -28,9 +33,12 @@ async function main() {
 	const profile = JSON.parse(await fs.readFile(profilePath, "utf8"));
 	const { runId, runDir } = await createRunLogDir(path.join("logs", "apply"));
 	const agent = new BrowserAIAgent({
+		channel: "chrome",
+		chromiumSandbox: true,
 		headless: false,
 		persistent: true,
-		userDataDir: path.resolve(".playwright", "apply-profile"),
+		userDataDir: path.resolve(".playwright", "apply-chrome-profile"),
+		manualLoginProvider,
 		reviewCheckpointProvider,
 		finalReviewProvider,
 	});
@@ -53,6 +61,54 @@ async function main() {
 	const artifactPath = await writeJsonArtifact(runDir, "run-artifact.json", compactArtifact);
 
 	console.log(formatRunSummary(result, artifactPath));
+}
+
+function createManualLoginProvider(options = {}) {
+	if (!options.input || options.input.isTTY !== true || !options.output || options.output.isTTY !== true) {
+		return null;
+	}
+	return createCliManualLoginProvider(options);
+}
+
+function createCliManualLoginProvider(options = {}) {
+	const input = options.input || process.stdin;
+	const output = options.output || process.stdout;
+	const errorOutput = options.errorOutput || process.stderr;
+	return async ({ attempt, maxAttempts, signal }) => {
+		const rl = readline.createInterface({ input, output });
+		try {
+			errorOutput.write(formatManualLoginPrompt(attempt, maxAttempts));
+			while (true) {
+				const answer = await askManualLoginQuestion(rl, signal);
+				if (answer === null) return { action: "stop" };
+				const command = answer.trim().toLowerCase();
+				if (!command) return { action: "resume" };
+				if (command === "q" || command === "quit" || command === "stop") return { action: "stop" };
+				errorOutput.write("Press Enter to continue, or Q to stop.\n");
+			}
+		} finally {
+			rl.close();
+		}
+	};
+}
+
+async function askManualLoginQuestion(rl, signal) {
+	try {
+		return await rl.question("> ", { signal });
+	} catch {
+		return null;
+	}
+}
+
+function formatManualLoginPrompt(attempt, maxAttempts) {
+	return `${[
+		"",
+		"Login required",
+		"",
+		"Complete sign-in or MFA in the open Chrome window.",
+		"You may use Chrome Password Manager. The agent will not inspect credentials.",
+		`Press Enter when the application page is ready, or Q to stop (${attempt}/${maxAttempts}).`,
+	].join("\n")}\n`;
 }
 
 function createReviewCheckpointProvider(options = {}) {
@@ -274,6 +330,7 @@ function buildCompactRunArtifact({ url, profilePath, resumePath, coverLetterPath
 	const completedFields = Array.isArray(runtimeState.completedFields) ? runtimeState.completedFields : [];
 	const reviewItems = Array.isArray(runtimeState.manualReview) ? runtimeState.manualReview : [];
 	const decisionGateResults = Array.isArray(runtimeState.decisionGateResults) ? runtimeState.decisionGateResults : [];
+	const manualLoginIntervention = summarizeManualLoginIntervention(lifecycle);
 
 	return {
 		runId: "",
@@ -299,13 +356,16 @@ function buildCompactRunArtifact({ url, profilePath, resumePath, coverLetterPath
 			userIntervened: field.source === "explicit-user-review",
 		})),
 		generatedAnswers: [],
-		manualInterventions: reviewItems.map((item) => ({
+		manualInterventions: [
+			...reviewItems.map((item) => ({
 			fieldIntent: item.fieldIntent || "",
 			fieldFingerprint: item.fieldFingerprint || "",
 			question: item.question || item.fieldLabel && item.fieldLabel.text || "",
 			options: item.optionsSnapshot || item.options || [],
 			reason: item.safetyReason || item.reason || "",
-		})),
+			})),
+			...(manualLoginIntervention ? [manualLoginIntervention] : []),
+		],
 		failures: lifecycle
 			.filter((entry) => entry.actionResult && entry.actionResult.verification && !entry.actionResult.verification.ok)
 			.map((entry) => ({
@@ -327,6 +387,20 @@ function buildCompactRunArtifact({ url, profilePath, resumePath, coverLetterPath
 		submitted: runtimeState.finalSubmissionTriggered === true,
 		metrics: buildRunMetrics({ runtimeState }),
 	};
+}
+
+function summarizeManualLoginIntervention(lifecycle) {
+	for (let index = lifecycle.length - 1; index >= 0; index -= 1) {
+		const intervention = lifecycle[index] && lifecycle[index].manualIntervention;
+		if (intervention && intervention.type === "manual-login") {
+			return {
+				type: "manual-login",
+				outcome: intervention.outcome,
+				attempts: intervention.attempts,
+			};
+		}
+	}
+	return null;
 }
 
 function summarizeCheckpoint(checkpoint) {
@@ -446,8 +520,10 @@ if (require.main === module) {
 module.exports = {
 	buildCompactRunArtifact,
 	createCliFinalReviewProvider,
+	createCliManualLoginProvider,
 	createCliReviewCheckpointProvider,
 	createFinalReviewProvider,
+	createManualLoginProvider,
 	createReviewCheckpointProvider,
 	formatFinalReviewSummary,
 	formatCliError,

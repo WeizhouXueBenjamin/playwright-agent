@@ -27,6 +27,8 @@ class AgentController {
 	async run(url, profile) {
 		if (this.options.persistent) {
 			const context = await launchPersistentChromiumContext({
+				channel: this.options.channel,
+				chromiumSandbox: this.options.chromiumSandbox,
 				headless: this.options.headless,
 				userDataDir: this.options.userDataDir,
 				viewport: this.options.viewport,
@@ -91,6 +93,7 @@ class AgentController {
 	async runOnPage(page, profile) {
 		const lifecycle = [];
 		const stateManager = new StateManager(this.options.goal || "");
+		let manualLoginAttempts = 0;
 		stateManager.setExecutionStatus("running");
 
 		for (let cycle = 1; cycle <= this.options.maxCycles; cycle += 1) {
@@ -119,6 +122,52 @@ class AgentController {
 			};
 
 			if (terminalState.reached) {
+				if (terminalState.reason === "login-required"
+					&& typeof this.options.manualLoginProvider === "function") {
+					if (manualLoginAttempts >= 2) {
+						stateManager.setExecutionStatus("needs-review");
+						lifecycle.push({
+							...lifecycleEntry,
+							phase: "observe-think-manual-login-stopped",
+							manualIntervention: buildManualLoginIntervention("stopped", manualLoginAttempts),
+							runtimeStateSnapshot: stateManager.getState(),
+						});
+						return {
+							status: "needs-review",
+							reason: "login-required",
+							runtimeState: stateManager.getState(),
+							lifecycle,
+						};
+					}
+
+					manualLoginAttempts += 1;
+					stateManager.setExecutionStatus("awaiting-manual-login");
+					const decision = await requestManualLoginDecision({
+						page,
+						provider: this.options.manualLoginProvider,
+						attempt: manualLoginAttempts,
+						maxAttempts: 2,
+					});
+					let resumed = decision.action === "resume";
+					if (resumed) resumed = await settleAfterManualLogin(page);
+					stateManager.setExecutionStatus(resumed ? "running" : "needs-review");
+					lifecycle.push({
+						...lifecycleEntry,
+						phase: resumed ? "observe-think-manual-login-resumed" : "observe-think-manual-login-stopped",
+						manualIntervention: buildManualLoginIntervention(resumed ? "resumed" : "stopped", manualLoginAttempts),
+						runtimeStateSnapshot: stateManager.getState(),
+					});
+
+					if (resumed) continue;
+
+					return {
+						status: "needs-review",
+						reason: "login-required",
+						runtimeState: stateManager.getState(),
+						lifecycle,
+					};
+				}
+
 				if (terminalState.status === "needs-review" && isReviewDetails(terminalState.details)) {
 					const checkpointResolution = await this.resolveReviewCheckpoint({
 						page,
@@ -748,6 +797,50 @@ function summarizeGateResult(gateResult) {
 		reason: gateResult.reason,
 		decisionId: gateResult.decisionId,
 		provenance: gateResult.provenance,
+	};
+}
+
+async function requestManualLoginDecision({ page, provider, attempt, maxAttempts }) {
+	const abortController = new AbortController();
+	let browserClosed = false;
+	const markClosed = () => {
+		browserClosed = true;
+		abortController.abort();
+	};
+	const context = page.context();
+	page.once("close", markClosed);
+	context.once("close", markClosed);
+
+	try {
+		const decision = await provider({
+			attempt,
+			maxAttempts,
+			signal: abortController.signal,
+		});
+		if (browserClosed || !decision || decision.action !== "resume") return { action: "stop" };
+		return { action: "resume" };
+	} catch {
+		return { action: "stop" };
+	} finally {
+		page.off("close", markClosed);
+		context.off("close", markClosed);
+	}
+}
+
+async function settleAfterManualLogin(page) {
+	if (!page || page.isClosed()) return false;
+	await Promise.allSettled([
+		page.waitForTimeout(500),
+		page.waitForLoadState("domcontentloaded", { timeout: 1500 }),
+	]);
+	return !page.isClosed();
+}
+
+function buildManualLoginIntervention(outcome, attempts) {
+	return {
+		type: "manual-login",
+		outcome,
+		attempts,
 	};
 }
 

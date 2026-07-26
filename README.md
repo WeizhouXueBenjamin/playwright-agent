@@ -1,65 +1,79 @@
 # Personal Job Application Assistant
 
-This repository is maintained as a personal job-application assistant
+A local, personal job application assistant that helps complete online applications while keeping sensitive decisions and final submission under user control.
 
-The active product workflow is:
+## Setup
 
-```text
-Job URL
--> open application page in a headed persistent browser
--> inspect visible fields
--> fill clear profile/document fields
--> ask for explicit review when missing, ambiguous, legal, privacy, or salary-sensitive
--> verify each action
--> stop before final submission
--> print a summary and save a compact run artifact
+Initialize the dedicated Chrome profile:
+
+```bash
+npm run setup:chrome-profile
 ```
 
+Use the opened Chrome window to sign in, complete MFA, and configure Chrome Autofill / Password Manager if needed.
+
+Close Chrome when finished.
+
 ## Usage
+
+Run:
 
 ```bash
 npm run apply -- <job-url>
 ```
 
-By default this uses `data/profile-full-stack.json`. To override it:
+By default, the assistant uses:
+
+```text
+data/profile-full-stack.json
+```
+
+To provide a custom profile or documents:
 
 ```bash
 npm run apply -- <job-url> <profile.json> [resume] [cover-letter]
 ```
 
-The browser is launched headed and persistent. When the CLI asks a review question, the browser stays open and the process waits for an answer. Enter `/stop` to stop the workflow manually.
+## How It Works
 
-The agent must not submit an application. Final submission remains a manual user action.
+```text
+Job URL
+-> open application in the dedicated Chrome profile
+-> fill clear profile/document fields
+-> pause when user input, login, consent, or review is required
+-> resume after user input
+-> verify completed actions
+-> stop at final review
+-> user submits manually
+```
 
-## Active Commands
+The browser stays open during login, review, and final inspection.
 
-- `npm run apply -- <job-url>`: primary workflow.
-- `npm run analyze:last-run`: read the latest compact run artifact and generate lightweight diagnostics plus advisory improvement proposals.
-- `npm run benchmark:core`: run the small authored core benchmark dataset.
-- `npm run benchmark:replay`: run the selected Greenhouse historical replay dataset.
-- `npm run test:mvp`: run the maintained active-runtime regression tests.
+The assistant never reads saved passwords and never submits an application automatically.
 
-Research-era commands are still available behind `archive:*` names while the repository is simplified in small phases.
+## Useful Commands
 
-## Safety Rules
-
-- Never click final submit.
-- Legal and privacy declarations require explicit confirmation.
-- Salary expectations must not be inferred from unrelated title or role data.
-- Work eligibility must not be guessed from incompatible profile facts.
-- Upload only configured files.
-- Ask the user when the field is ambiguous or unsupported.
+```bash
+npm run setup:chrome-profile
+npm run apply -- <job-url>
+npm run analyze:last-run
+npm run benchmark:core
+npm run benchmark:replay
+npm run test:mvp
+```
 
 ## Run Artifacts
 
-Each apply run writes a compact artifact under `logs/apply/run-*/run-artifact.json` with:
+Each run saves:
 
-- run status and URL
-- filled fields
-- generated answers
-- manual review items
-- failures
-- safety stops
-- `submitted: false`
+```text
+logs/apply/run-*/run-artifact.json
+```
 
-Use `npm run analyze:last-run` after a production run to generate `diagnostics.json`, `recurring-issues.json`, and `improvement-proposals.json` beside the artifact.
+Use:
+
+```bash
+npm run analyze:last-run
+```
+
+to inspect the latest run.

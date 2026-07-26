@@ -5,6 +5,8 @@ const {
 	buildCompactRunArtifact,
 	createFinalReviewProvider,
 	createCliFinalReviewProvider,
+	createCliManualLoginProvider,
+	createManualLoginProvider,
 	createReviewCheckpointProvider,
 	formatCliError,
 	formatFinalReviewSummary,
@@ -15,18 +17,94 @@ const {
 async function main() {
 	assert.equal(createReviewCheckpointProvider({ input: { isTTY: false }, output: { isTTY: true } }), null);
 	assert.equal(createFinalReviewProvider({ input: { isTTY: false }, output: { isTTY: true } }), null);
+	assert.equal(createManualLoginProvider({ input: { isTTY: false }, output: { isTTY: true } }), null);
 	assert.equal(normalizeProductStatus({ status: "needs-user-confirmation", reason: "recovery-needs-user-confirmation" }), "needs-review");
 	assert.equal(normalizeProductStatus({ status: "needs-review", reason: "login-required" }), "login-required");
 	assertCompactRunSummary();
 	assertCompactCliError();
 	assertFinalReviewArtifactIsBounded();
+	assertManualLoginArtifactIsBounded();
 	assertFinalReviewSummaryIsBounded();
 	await assertFinalReviewOpensAndWaitsForAcknowledgement();
+	await assertManualLoginEnterResumes();
+	await assertManualLoginQuitStops();
+	await assertManualLoginEofStops();
 	await assertCheckpointConsentProviderUsesTypedActions();
 	await assertCustomConsentRequiresOnlyOptionSelection();
 	await assertManualValueCanBeEnteredDirectly();
 	await assertOptionSelectionCanBeEnteredDirectly();
 	await assertCheckpointQuitStillReturnsStop();
+}
+
+function assertManualLoginArtifactIsBounded() {
+	const artifact = buildCompactRunArtifact({
+		url: "https://example.test/apply",
+		profilePath: "data/profile.json",
+		resumePath: "",
+		coverLetterPath: "",
+		result: {
+			status: "awaiting-human-confirmation",
+			reason: "final-submission-control-detected",
+			runtimeState: {},
+			lifecycle: [{
+				manualIntervention: {
+					type: "manual-login",
+					outcome: "resumed",
+					attempts: 1,
+					url: "https://accounts.example.test/?state=secret",
+				},
+			}],
+		},
+	});
+
+	assert.deepEqual(artifact.manualInterventions, [{
+		type: "manual-login",
+		outcome: "resumed",
+		attempts: 1,
+	}]);
+}
+
+async function assertManualLoginEnterResumes() {
+	const fixture = makeManualLoginProvider();
+	const decisionPromise = fixture.provider({ attempt: 1, maxAttempts: 2, signal: new AbortController().signal });
+	await waitFor(() => fixture.readErrorOutput().includes("Login required"), 2000);
+	fixture.input.write("\n");
+	assert.deepEqual(await decisionPromise, { action: "resume" });
+	fixture.cleanup();
+}
+
+async function assertManualLoginQuitStops() {
+	const fixture = makeManualLoginProvider();
+	const decisionPromise = fixture.provider({ attempt: 1, maxAttempts: 2, signal: new AbortController().signal });
+	await waitFor(() => fixture.readErrorOutput().includes("Login required"), 2000);
+	fixture.input.write("q\n");
+	assert.deepEqual(await decisionPromise, { action: "stop" });
+	fixture.cleanup();
+}
+
+async function assertManualLoginEofStops() {
+	const fixture = makeManualLoginProvider();
+	const decisionPromise = fixture.provider({ attempt: 1, maxAttempts: 2, signal: new AbortController().signal });
+	await waitFor(() => fixture.readErrorOutput().includes("Login required"), 2000);
+	fixture.input.end();
+	assert.deepEqual(await decisionPromise, { action: "stop" });
+	fixture.cleanup();
+}
+
+function makeManualLoginProvider() {
+	const input = new PassThrough();
+	input.isTTY = true;
+	const output = new PassThrough();
+	output.isTTY = true;
+	const errorOutput = new PassThrough();
+	let errorText = "";
+	errorOutput.on("data", (chunk) => { errorText += chunk.toString(); });
+	return {
+		provider: createCliManualLoginProvider({ input, output, errorOutput }),
+		input,
+		readErrorOutput: () => errorText,
+		cleanup: () => cleanupStreams(input, output, errorOutput),
+	};
 }
 
 function buildFinalReviewSummaryFixture() {

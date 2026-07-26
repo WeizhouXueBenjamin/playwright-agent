@@ -22,8 +22,7 @@ async function openPageInContext(context, url, options = {}) {
 		navigationTimeoutMs = 45000,
 	} = options;
 
-	const pages = context.pages();
-	const page = pages[0] || await context.newPage();
+	const page = await context.newPage();
 	page.setDefaultNavigationTimeout(navigationTimeoutMs);
 	page.setDefaultTimeout(navigationTimeoutMs);
 

@@ -10,6 +10,8 @@ async function launchChromium(options = {}) {
 
 async function launchPersistentChromiumContext(options = {}) {
 	const {
+		channel,
+		chromiumSandbox,
 		headless = true,
 		userDataDir,
 		viewport = { width: 1365, height: 900 },
@@ -20,6 +22,8 @@ async function launchPersistentChromiumContext(options = {}) {
 	}
 
 	return chromium.launchPersistentContext(userDataDir, {
+		channel,
+		chromiumSandbox,
 		headless,
 		viewport,
 	});
