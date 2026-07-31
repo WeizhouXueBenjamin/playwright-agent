@@ -33,6 +33,7 @@ async function main() {
 	await assertCustomConsentRequiresOnlyOptionSelection();
 	await assertManualValueCanBeEnteredDirectly();
 	await assertOptionSelectionCanBeEnteredDirectly();
+	await assertMultipleOptionSelectionCanBeEnteredDirectly();
 	await assertCheckpointQuitStillReturnsStop();
 }
 
@@ -416,6 +417,41 @@ async function assertOptionSelectionCanBeEnteredDirectly() {
 	input.destroy();
 	output.destroy();
 	errorOutput.destroy();
+}
+
+async function assertMultipleOptionSelectionCanBeEnteredDirectly() {
+	const input = new PassThrough();
+	input.isTTY = true;
+	const output = new PassThrough();
+	output.isTTY = true;
+	const errorOutput = new PassThrough();
+	let reviewText = "";
+	errorOutput.on("data", (chunk) => { reviewText += chunk.toString(); });
+	const provider = createReviewCheckpointProvider({ input, output, errorOutput });
+	const reviewCheckpoint = {
+		id: "checkpoint-technologies",
+		items: [{
+			id: "review-technologies",
+			type: "option-selection",
+			fieldLabel: { text: "Technologies used" },
+			fieldState: { currentValue: [] },
+			assessment: "Choose the applicable options.",
+			options: [{ label: "React" }, { label: "AWS" }, { label: "Java" }],
+			metadata: { multiple: true },
+			allowedActions: ["select", "manual", "skip", "stop"],
+		}],
+	};
+	const decisionsPromise = provider({ reviewCheckpoint, runtimeState: { completedFields: [] } });
+
+	input.write("1, 2\n");
+	const decisions = await decisionsPromise;
+	assert.deepEqual(decisions, [{
+		itemId: "review-technologies",
+		action: "select",
+		value: ["React", "AWS"],
+	}]);
+	assert.match(reviewText, /Select one or more/);
+	cleanupStreams(input, output, errorOutput);
 }
 
 async function assertCheckpointQuitStillReturnsStop() {

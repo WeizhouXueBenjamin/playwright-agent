@@ -64,7 +64,7 @@ function buildReviewRequest({ reviewItem, checkpointId, index }) {
 		assessment: getAssessment({ type, prompt, field }),
 		evidence: (safetyDecision.evidence || []).map((item) => item.value || item).filter(Boolean).slice(0, 5),
 		optionMatch: sanitizeOptionMatch(safetyDecision.optionMatch),
-		metadata: getMetadata({ type, prompt }),
+		metadata: getMetadata({ type, prompt, field }),
 		optionSnapshotId: reviewItem.optionSnapshot && reviewItem.optionSnapshot.snapshotId || "",
 		optionsComplete: reviewItem.optionSnapshot ? reviewItem.optionSnapshot.complete === true : field.kind === "selection" ? false : true,
 		allowedActions: getAllowedActions({ type, field, prompt }),
@@ -137,16 +137,19 @@ function sanitizeOptionMatch(optionMatch) {
 	};
 }
 
-function getMetadata({ type, prompt }) {
+function getMetadata({ type, prompt, field }) {
 	return {
 		sensitive: prompt.fieldIntent !== "low-risk" && prompt.fieldIntent !== "unknown",
 		voluntary: false,
 		allowPreferNotToAnswer: type === REVIEW_TYPES.OPTION_SELECTION && prompt.fieldIntent !== "privacy-consent",
+		multiple: Boolean(field.choiceGroup && field.choiceGroup.mode === "multiple"),
+		choiceGroupRule: field.choiceGroup && field.choiceGroup.rule || "",
 	};
 }
 
 function summarizeCurrentValue(field) {
 	const state = field.state || {};
+	if (Array.isArray(state.selectedLabels)) return state.selectedLabels;
 	if (Object.prototype.hasOwnProperty.call(state, "checked")) return state.checked;
 	if (Object.prototype.hasOwnProperty.call(state, "selectedLabel")) return state.selectedLabel || state.value || "";
 	if (Array.isArray(state.files)) return state.files.map((file) => file.name);

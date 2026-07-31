@@ -4,7 +4,8 @@ const EXPLICIT_REVIEW_SOURCE = "explicit-user-review";
 const CURRENT_RUN_SCOPE = "current-run";
 
 function buildFieldFingerprint(field = {}) {
-	const stableDomIdentity = field.domId || field.name || field.ariaLabelledBy || "";
+	const stableDomIdentity = field.choiceGroup && field.choiceGroup.id
+		|| field.domId || field.name || field.ariaLabelledBy || "";
 	const input = {
 		stableDomIdentity: stableDomIdentity || field.id || "",
 		kind: field.kind || "",
@@ -43,6 +44,7 @@ function normalizeReviewPrompt(reviewItem = {}) {
 		safetyReason: safetyDecision.reason || reviewItem.reason || "review-required",
 		message: getSafetyMessage(safetyDecision.reason || reviewItem.reason || "review-required"),
 		minimumInputRequired: options.length ? "Choose one of the available answers." : "Provide the exact answer for this field.",
+		choiceGroup: field.choiceGroup || null,
 	};
 }
 
@@ -186,6 +188,8 @@ function getSafetyMessage(reason) {
 }
 
 function inferAnswerType(answer, field = {}) {
+	if (field.choiceGroup && field.choiceGroup.mode === "multiple") return "multi-selection";
+	if (Array.isArray(answer)) return "multi-selection";
 	if (field.kind === "radio" || field.kind === "selection") return "selection";
 	if (field.kind === "checkbox") return "boolean";
 	if (typeof answer === "boolean") return "boolean";

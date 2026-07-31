@@ -1,5 +1,12 @@
 function buildSemanticPage(rawPage) {
 	const interactiveElements = rawPage.interactiveElements.elements.map(buildSemanticElement);
+	const choiceGroups = (rawPage.interactiveElements.choiceGroups || []).map((group) => ({
+		id: group.id,
+		mode: group.mode,
+		question: group.question || "",
+		rule: group.rule,
+		memberIds: group.memberIds || [],
+	}));
 	const forms = rawPage.interactiveElements.forms.map((form) => ({
 		id: form.id,
 		label: form.label || form.ariaLabel || form.name || "",
@@ -18,6 +25,7 @@ function buildSemanticPage(rawPage) {
 		visibleText: rawPage.visibleText || "",
 		summary: summarize(interactiveElements, forms),
 		interactiveElements,
+		choiceGroups,
 		forms,
 	};
 }
@@ -44,7 +52,9 @@ function buildSemanticElement(element) {
 		semanticPath: element.semanticPath,
 		domId: element.idAttribute || "",
 		name: element.name || "",
+		value: element.value || "",
 		ariaLabelledBy: element.ariaLabelledBy || "",
+		choiceGroupId: element.choiceGroupId || "",
 		evidence: {
 			namePresent: Boolean(element.name),
 			idPresent: Boolean(element.idAttribute),

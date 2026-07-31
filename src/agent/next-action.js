@@ -123,6 +123,11 @@ function buildAdaptiveDecision(adaptiveReasoning) {
 }
 
 function isStepAlreadySatisfied(step, runtimeState = {}) {
+	if (step.verifyChoiceGroup && step.choiceGroupExpectation) {
+		const expected = [...(step.choiceGroupExpectation.selectedMemberIds || [])].sort();
+		const actual = [...(step.choiceGroupExpectation.currentSelectedMemberIds || [])].sort();
+		return expected.length === actual.length && expected.every((value, index) => value === actual[index]);
+	}
 	if (isStepCompletedInRuntimeState(step, runtimeState)) return true;
 
 	const state = step.field.state || {};

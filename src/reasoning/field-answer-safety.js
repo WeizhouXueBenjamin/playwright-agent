@@ -242,7 +242,7 @@ function validateSensitiveFieldValue(input = {}) {
 		return buildValueDecision(false, "sensitive-field-option-not-available");
 	}
 
-	if (requiresBooleanAnswer({ intent, fieldType, options, fieldText }) && !isBooleanCompatible(value)) {
+	if (requiresBooleanAnswer({ intent, fieldType, options, fieldText, field }) && !isBooleanCompatible(value)) {
 		return buildValueDecision(false, "sensitive-field-value-format-mismatch");
 	}
 
@@ -437,10 +437,14 @@ function matchesAvailableOption(value, options) {
 		.filter(Boolean);
 	if (!optionTexts.length) return true;
 
-	return getValueOptionTexts(value).some((candidate) => optionTexts.includes(candidate));
+	const candidates = getValueOptionTexts(value);
+	return Array.isArray(value)
+		? candidates.length > 0 && candidates.every((candidate) => optionTexts.includes(candidate))
+		: candidates.some((candidate) => optionTexts.includes(candidate));
 }
 
 function getValueOptionTexts(value) {
+	if (Array.isArray(value)) return value.map(normalizeComparableText).filter(Boolean);
 	if (typeof value === "boolean") return [value ? "yes" : "no", String(value)];
 	return [normalizeComparableText(value)];
 }
@@ -450,6 +454,7 @@ function normalizeComparableText(value) {
 }
 
 function requiresBooleanAnswer(input) {
+	if (input.field && input.field.choiceGroup && input.field.choiceGroup.mode === "multiple") return false;
 	if (input.intent === FIELD_INTENTS.SPONSORSHIP_REQUIRED) return true;
 	if (input.intent === FIELD_INTENTS.WORK_AUTHORIZATION) return isBooleanQuestion(input.fieldText, input.options);
 	if (input.fieldType === "checkbox") return true;

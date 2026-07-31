@@ -37,11 +37,13 @@ function validateActionProposal(input = {}) {
 
 	const profileProperty = step.profileProperty || null;
 	if (profileProperty) {
-		const safetyDecision = evaluateFieldAnswerSafety(target, {
+		const safetyTarget = step.choiceGroupField || target;
+		const safetyValue = step.choiceGroupField ? step.choiceGroupSelectedValues : step.actionValue;
+		const safetyDecision = evaluateFieldAnswerSafety(safetyTarget, {
 			...profileProperty,
-			value: step.actionValue,
+			value: safetyValue,
 		});
-		const fieldIntent = classifyFieldIntent(target);
+		const fieldIntent = classifyFieldIntent(safetyTarget);
 		const sensitive = fieldIntent.riskLevel === "high" || fieldIntent.fieldIntent !== "low-risk";
 
 		if (sensitive && !safetyDecision.allowed) {
@@ -52,8 +54,8 @@ function validateActionProposal(input = {}) {
 			? safetyDecision.valueCompatibility
 			: validateSensitiveFieldValue({
 				intent: fieldIntent.fieldIntent,
-				value: step.actionValue,
-				field: target,
+				value: safetyValue,
+				field: safetyTarget,
 			});
 		if (sensitive && !compatibility.allowed) {
 			return review(compatibility.reason, step, semanticOwner, {

@@ -14,7 +14,7 @@ function buildExecutionPlan(matches, options = {}) {
 			continue;
 		}
 
-		steps.push(createActionStep(match, steps.length + 1));
+		steps.push(...createActionSteps(match, steps.length + 1));
 	}
 
 	return {
@@ -48,7 +48,7 @@ function getReviewItem(match, minConfidence) {
 			reason: "unmatched-field",
 			message: "No profile property was confidently matched to this field.",
 			confidenceScore: match.confidenceScore,
-			safetyDecision: match.safetyDecision,
+			safetyDecision: match.safetyDecision || (match.field.choiceGroup ? match.fieldAnswerSafety : undefined),
 		};
 	}
 
@@ -93,6 +93,60 @@ function createActionStep(match, order) {
 	return step;
 }
 
+function createActionSteps(match, startOrder) {
+	if (!match.field.choiceGroup) return [createActionStep(match, startOrder)];
+	const values = Array.isArray(match.matchedProfileProperty.value)
+		? match.matchedProfileProperty.value
+		: [match.matchedProfileProperty.value];
+	const selectedOptions = values.map((value) => {
+		return (match.field.options || []).find((option) => option.label === value);
+	}).filter(Boolean);
+	const expectation = {
+		id: match.field.choiceGroup.id,
+		mode: match.field.choiceGroup.mode,
+		selectedMemberIds: selectedOptions.map((option) => option.fieldId),
+		currentSelectedMemberIds: (match.field.options || []).filter((option) => option.checked).map((option) => option.fieldId),
+		members: (match.field.options || []).map((option) => ({
+			fieldId: option.fieldId,
+			domId: option.domId || "",
+			name: option.name || "",
+			value: option.value || "",
+			role: option.role || "",
+			kind: option.kind,
+			label: option.label,
+		})),
+	};
+
+	return selectedOptions.map((option, index) => {
+		const actionValue = match.field.choiceGroup.mode === "single" ? option.label : true;
+		const step = buildCapabilityStep({
+			id: `step-${startOrder + index}`,
+			order: startOrder + index,
+			field: {
+				id: option.fieldId,
+				kind: option.kind,
+				role: option.role,
+				domId: option.domId,
+				name: option.name,
+				value: option.value,
+				label: { text: option.label, source: "choice-group-option", confidence: 1 },
+				state: { checked: Boolean(option.checked) },
+			},
+			profileProperty: withoutRawValue(match.matchedProfileProperty),
+			actionValue,
+			valuePreview: previewValue(actionValue),
+			confidenceScore: match.confidenceScore,
+			reasoning: match.reasoning,
+		});
+		step.choiceGroupField = match.field;
+		step.choiceGroupSelectedValues = values;
+		step.choiceGroupExpectation = expectation;
+		step.verifyChoiceGroup = index === selectedOptions.length - 1;
+		if (match.safetyDecision) step.safetyDecision = match.safetyDecision;
+		return step;
+	});
+}
+
 function withoutRawValue(profileProperty, options = {}) {
 	const result = {
 		path: profileProperty.path,
@@ -110,6 +164,7 @@ function withoutRawValue(profileProperty, options = {}) {
 
 function getActionValue(match) {
 	const value = match.matchedProfileProperty.value;
+	if (match.field.choiceGroup) return value;
 	if (!match.matchedProfileProperty.reviewAnswer) return value;
 	if (match.field.kind !== "checkbox") return value;
 	const normalized = String(value || "").trim().toLowerCase();

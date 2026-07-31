@@ -25,9 +25,10 @@ async function captureInteractiveElements(page) {
 			"[role='textbox']",
 		].join(",");
 
-		const elements = Array.from(document.querySelectorAll(interactiveSelector))
-			.filter((element) => isElementVisible(element))
-			.map((element, index) => serializeInteractiveElement(element, index));
+		const interactiveNodes = Array.from(document.querySelectorAll(interactiveSelector))
+			.filter((element) => isElementVisible(element));
+		const elements = interactiveNodes.map((element, index) => serializeInteractiveElement(element, index));
+		const choiceGroups = detectChoiceGroups(interactiveNodes, elements);
 
 		const forms = Array.from(document.forms).map((form, index) => ({
 			id: `form-${index + 1}`,
@@ -41,7 +42,7 @@ async function captureInteractiveElements(page) {
 				.map((element) => element.index),
 		}));
 
-		return { elements, forms };
+		return { elements, forms, choiceGroups };
 
 		function serializeInteractiveElement(element, index) {
 			const rect = element.getBoundingClientRect();
@@ -49,7 +50,7 @@ async function captureInteractiveElements(page) {
 			const tagName = element.tagName.toLowerCase();
 			const role = element.getAttribute("role") || getImplicitRole(element);
 			const type = element.getAttribute("type") || "";
-			const form = element.closest("form");
+			const form = element.form || element.closest("form");
 
 			return {
 				id: `interactive-${index + 1}`,
@@ -59,6 +60,7 @@ async function captureInteractiveElements(page) {
 				type,
 				role,
 				name: element.getAttribute("name") || "",
+				value: element.getAttribute("value") || "",
 				idAttribute: element.id || "",
 				required: element.hasAttribute("required") || element.getAttribute("aria-required") === "true",
 				disabled: isDisabled(element),
@@ -80,6 +82,145 @@ async function captureInteractiveElements(page) {
 				formIndex: form ? Array.from(document.forms).indexOf(form) : -1,
 				semanticPath: getSemanticPath(element),
 			};
+		}
+
+		function detectChoiceGroups(nodes, serializedElements) {
+			const candidates = nodes.map((node, index) => ({ node, element: serializedElements[index] }))
+				.filter(({ element }) => element.kind === "radio" || element.kind === "checkbox");
+			const assigned = new Set();
+			const groups = [];
+
+			addGroupedCandidates("native-name", ({ node, element }) => {
+				const name = String(node.getAttribute("name") || "").trim();
+				return name ? `${getFormOwnerKey(node)}:${element.kind}:${name}` : "";
+			});
+			addGroupedCandidates("fieldset", ({ node, element }) => {
+				const fieldset = node.closest("fieldset");
+				return fieldset && getDirectLegendText(fieldset) ? `${getNodeKey(fieldset)}:${element.kind}` : "";
+			});
+			addGroupedCandidates("aria-group", ({ node, element }) => {
+				const group = node.closest('[role="radiogroup"],[role="group"]');
+				return group && getAccessibleName(group) ? `${getNodeKey(group)}:${element.kind}` : "";
+			});
+			addGroupedCandidates("shared-aria-labelledby", ({ node, element }) => {
+				const labelledBy = normalizeIdRefs(node.getAttribute("aria-labelledby"));
+				return labelledBy && getReferencedText(labelledBy)
+					? `${getFormOwnerKey(node)}:${element.kind}:${labelledBy}`
+					: "";
+			});
+
+			return groups;
+
+			function addGroupedCandidates(rule, getKey) {
+				const byKey = new Map();
+				for (const candidate of candidates) {
+					if (assigned.has(candidate.element.id)) continue;
+					const key = getKey(candidate);
+					if (!key) continue;
+					if (!byKey.has(key)) byKey.set(key, []);
+					byKey.get(key).push(candidate);
+				}
+
+				for (const members of byKey.values()) {
+					if (members.length < 2) continue;
+					if (new Set(members.map(({ element }) => element.kind)).size !== 1) continue;
+					const id = `choice-group-${groups.length + 1}`;
+					groups.push({
+						id,
+						mode: members[0].element.kind === "radio" ? "single" : "multiple",
+						question: getGroupQuestion(members.map(({ node }) => node)),
+						rule,
+						memberIds: members.map(({ element }) => element.id),
+					});
+					for (const { element } of members) {
+						element.choiceGroupId = id;
+						assigned.add(element.id);
+					}
+				}
+			}
+		}
+
+		function getGroupQuestion(nodes) {
+			const fieldsets = new Set(nodes.map((node) => node.closest("fieldset")).filter(Boolean));
+			if (fieldsets.size === 1) {
+				const legend = getDirectLegendText([...fieldsets][0]);
+				if (legend) return legend;
+			}
+
+			const ariaGroups = new Set(nodes.map((node) => node.closest('[role="radiogroup"],[role="group"]')).filter(Boolean));
+			if (ariaGroups.size === 1) {
+				const name = getAccessibleName([...ariaGroups][0]);
+				if (name) return name;
+			}
+
+			const labelledByValues = new Set(nodes.map((node) => normalizeIdRefs(node.getAttribute("aria-labelledby"))).filter(Boolean));
+			if (labelledByValues.size === 1) {
+				const text = getReferencedText([...labelledByValues][0]);
+				if (text) return text;
+			}
+
+			return getStructuralPreamble(nodes);
+		}
+
+		function getStructuralPreamble(nodes) {
+			const ancestor = getLowestCommonAncestor(nodes);
+			if (!ancestor) return "";
+			const branches = nodes.map((node) => getDirectChildContaining(ancestor, node)).filter(Boolean);
+			const children = Array.from(ancestor.children || []);
+			const indexes = branches.map((branch) => children.indexOf(branch)).filter((index) => index >= 0);
+			if (!indexes.length) return "";
+			const firstOptionIndex = Math.min(...indexes);
+			if (firstOptionIndex <= 0) return "";
+			return normalizeText(children.slice(0, firstOptionIndex)
+				.filter((child) => !child.querySelector('input[type="radio"],input[type="checkbox"],[role="radio"],[role="checkbox"]'))
+				.map((child) => child.innerText || child.textContent || "")
+				.join(" ")).slice(0, 320);
+		}
+
+		function getLowestCommonAncestor(nodes) {
+			if (!nodes.length) return null;
+			let current = nodes[0].parentElement;
+			while (current && !nodes.every((node) => current.contains(node))) current = current.parentElement;
+			return current;
+		}
+
+		function getDirectChildContaining(ancestor, node) {
+			let current = node;
+			while (current && current.parentElement !== ancestor) current = current.parentElement;
+			return current && current.parentElement === ancestor ? current : null;
+		}
+
+		function getDirectLegendText(fieldset) {
+			const legend = Array.from(fieldset.children || [])
+				.find((child) => child.tagName && child.tagName.toLowerCase() === "legend");
+			return legend ? normalizeText(legend.innerText || legend.textContent || "") : "";
+		}
+
+		function getAccessibleName(element) {
+			const ariaLabel = normalizeText(element.getAttribute("aria-label") || "");
+			return ariaLabel || getReferencedText(normalizeIdRefs(element.getAttribute("aria-labelledby")));
+		}
+
+		function normalizeIdRefs(value) {
+			return String(value || "").split(/\s+/).filter(Boolean).join(" ");
+		}
+
+		function getReferencedText(idRefs) {
+			if (!idRefs) return "";
+			return normalizeText(idRefs.split(/\s+/)
+				.map((id) => document.getElementById(id))
+				.filter(Boolean)
+				.map((element) => element.innerText || element.textContent || "")
+				.join(" "));
+		}
+
+		function getFormOwnerKey(element) {
+			const owner = element.form || element.closest("form");
+			return owner ? `form-${Array.from(document.forms).indexOf(owner)}` : "document-root";
+		}
+
+		function getNodeKey(element) {
+			return element.id || `node-${Array.from(document.querySelectorAll("*")).indexOf(element)}`;
 		}
 
 		function collectLabelCandidates(element) {
@@ -168,8 +309,12 @@ async function captureInteractiveElements(page) {
 			const type = (element.getAttribute("type") || "").toLowerCase();
 			const role = element.getAttribute("role") || "";
 
-			if (type === "checkbox" || type === "radio") {
-				return { checked: Boolean(element.checked) };
+			if (type === "checkbox" || type === "radio" || role === "checkbox" || role === "radio") {
+				return {
+					checked: "checked" in element
+						? Boolean(element.checked)
+						: element.getAttribute("aria-checked") === "true",
+				};
 			}
 
 			if (tagName === "select") {
@@ -260,6 +405,7 @@ async function captureInteractiveElements(page) {
 			if (tagName === "select" || role === "combobox" || role === "listbox") return "selection";
 			if (tagName === "textarea" || role === "textbox" || ["email", "password", "search", "tel", "text", "url"].includes(type)) return "text-input";
 			if (["checkbox", "radio"].includes(type)) return type;
+			if (["checkbox", "radio"].includes(role)) return role;
 			if (tagName === "button" || role === "button" || ["button", "submit", "reset"].includes(type)) return "button";
 			if (tagName === "a" || role === "link") return "link";
 			if (element.isContentEditable) return "editable";

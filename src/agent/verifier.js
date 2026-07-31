@@ -10,17 +10,22 @@ async function verifyAction(page, step, actionResult = {}) {
 	const { locator, strategy } = await resolveFieldLocator(page, step.field);
 
 	if (step.action === "set-checkbox") {
-		const actual = await locator.isChecked();
+		const actual = await readChecked(locator);
 		const expected = Boolean(step.actionValue);
+		if (step.verifyChoiceGroup && step.choiceGroupExpectation) {
+			return verifyChoiceGroupState(page, step.choiceGroupExpectation);
+		}
 		return buildVerificationResult(actual === expected, expected, actual, strategy);
 	}
 
 	if (step.action === "select-option") {
 		if (step.field.kind === "radio") {
 			const expected = String(step.actionValue);
-			const radio = page.getByLabel(expected, { exact: true });
-			const actual = await radio.first().isChecked();
-			return buildVerificationResult(actual === true, expected, actual ? expected : "", `radio-label:${expected}`);
+			if (step.verifyChoiceGroup && step.choiceGroupExpectation) {
+				return verifyChoiceGroupState(page, step.choiceGroupExpectation);
+			}
+			const actual = await readChecked(locator);
+			return buildVerificationResult(actual === true, expected, actual ? expected : "", strategy);
 		}
 
 		const expected = String(step.actionValue);
@@ -54,6 +59,43 @@ async function verifyAction(page, step, actionResult = {}) {
 		? normalizePhoneValue(actual) === normalizePhoneValue(expected)
 		: actual === expected;
 	return buildVerificationResult(matched, expected, actual, strategy);
+}
+
+async function verifyChoiceGroupState(page, expectation) {
+	const actualSelectedMemberIds = [];
+	for (const member of expectation.members || []) {
+		const { locator } = await resolveFieldLocator(page, {
+			id: member.fieldId,
+			kind: member.kind,
+			role: member.role,
+			domId: member.domId,
+			name: member.name,
+			value: member.value,
+			label: { text: member.label, source: "choice-group-option", confidence: 1 },
+		});
+		if (await readChecked(locator)) actualSelectedMemberIds.push(member.fieldId);
+	}
+	const expected = [...(expectation.selectedMemberIds || [])].sort();
+	const actual = actualSelectedMemberIds.sort();
+	const singleSelectionValid = expectation.mode !== "single" || actual.length === 1;
+	return buildVerificationResult(
+		singleSelectionValid && arraysEqual(expected, actual),
+		expected,
+		actual,
+		`choice-group:${expectation.id}`,
+	);
+}
+
+async function readChecked(locator) {
+	return locator.evaluate((element) => {
+		return "checked" in element
+			? Boolean(element.checked)
+			: element.getAttribute("aria-checked") === "true";
+	});
+}
+
+function arraysEqual(left, right) {
+	return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function isStructuredPhoneStep(step) {

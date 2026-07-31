@@ -580,6 +580,7 @@ async function applyCheckpointDecisions({ page, checkpoint, decisions, stateMana
 					id: item.fieldId,
 					kind: item.controlType,
 					label: item.fieldLabel,
+					choiceGroup: item.legacyPrompt && item.legacyPrompt.choiceGroup || null,
 					statementFingerprint: item.statementFingerprint,
 				},
 				safetyDecision: {
@@ -659,20 +660,24 @@ function validateCheckpointDecisions(checkpoint, decisions) {
 
 function validateDecisionValue(item, decision) {
 	if (decision.action === "authorize" && (item.options || []).length) {
-		if (!hasValue(decision.value)) return "review-decision-value-required";
-		if (!(item.options || []).some((option) => option.label === decision.value)) {
+		const values = decisionValues(decision);
+		if (!values.length) return "review-decision-value-required";
+		if (!values.every((value) => (item.options || []).some((option) => option.label === value))) {
 			return "review-decision-option-not-available";
 		}
+		if (!(item.metadata && item.metadata.multiple) && values.length !== 1) return "review-decision-single-option-required";
 	}
 	if (decision.action === "confirm" && !hasValue(item.proposedValue)) return "review-decision-proposed-value-missing";
 	if (["replace", "provide-value"].includes(decision.action) && !hasValue(decision.value || decision.answer)) {
 		return "review-decision-value-required";
 	}
 	if (decision.action === "select") {
-		if (!hasValue(decision.value)) return "review-decision-value-required";
-		if (!(item.options || []).some((option) => option.label === decision.value)) {
+		const values = decisionValues(decision);
+		if (!values.length) return "review-decision-value-required";
+		if (!values.every((value) => (item.options || []).some((option) => option.label === value))) {
 			return "review-decision-option-not-available";
 		}
+		if (!(item.metadata && item.metadata.multiple) && values.length !== 1) return "review-decision-single-option-required";
 	}
 	if (decision.action === "provide-file") {
 		if (!hasValue(decision.value)) return "review-decision-value-required";
@@ -686,6 +691,12 @@ function validateDecisionValue(item, decision) {
 		return "review-decision-action-not-allowed";
 	}
 	return "";
+}
+
+function decisionValues(decision) {
+	const value = decision && (decision.value !== undefined ? decision.value : decision.answer);
+	const values = Array.isArray(value) ? value : hasValue(value) ? [value] : [];
+	return [...new Set(values.map((item) => String(item || "").trim()).filter(Boolean))];
 }
 
 function toRecordedDecision(item, decision) {
@@ -752,6 +763,19 @@ function isFieldReviewItem(reviewItem) {
 
 async function verifyManualCompletion(page, reviewPrompt) {
 	const observation = await observePage(page);
+	if (reviewPrompt.choiceGroup) {
+		const group = (observation.semanticPage.choiceGroups || []).find((candidate) => candidate.id === reviewPrompt.choiceGroup.id);
+		if (!group) return { ok: false, reason: "manual-field-not-found" };
+		const members = (observation.semanticPage.interactiveElements || []).filter((element) => (group.memberIds || []).includes(element.id));
+		const selected = members.filter((member) => member.state && member.state.checked);
+		if (!selected.length || group.mode === "single" && selected.length !== 1) {
+			return { ok: false, reason: "manual-field-unchanged-or-invalid" };
+		}
+		if (members.some((member) => member.validation && member.validation.valid === false)) {
+			return { ok: false, reason: "manual-field-invalid" };
+		}
+		return { ok: true, reason: "manual-field-verified", fieldId: group.id };
+	}
 	const field = (observation.semanticPage.interactiveElements || []).find((element) => {
 		return buildFieldFingerprint(element) === reviewPrompt.fieldFingerprint || element.id === reviewPrompt.fieldId;
 	});

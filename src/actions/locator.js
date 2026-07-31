@@ -21,6 +21,20 @@ function buildLocatorStrategies(page, field) {
 		});
 	}
 
+	if (field.domId) {
+		strategies.push({
+			name: `id:${field.domId}`,
+			locator: page.locator(`[id="${escapeAttribute(field.domId)}"]`),
+		});
+	}
+
+	if (field.name && field.value && ["radio", "checkbox"].includes(field.kind)) {
+		strategies.push({
+			name: `name-value:${field.name}`,
+			locator: page.locator(`[name="${escapeAttribute(field.name)}"][value="${escapeAttribute(field.value)}"]`),
+		});
+	}
+
 	if (field.role && field.label && field.label.text) {
 		strategies.push({
 			name: `role:${field.role}:${field.label.text}`,
@@ -76,6 +90,10 @@ function getFieldLabels(field) {
 
 function getFieldName(field) {
 	return field.label && field.label.text ? field.label.text : field.id;
+}
+
+function escapeAttribute(value) {
+	return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 module.exports = {

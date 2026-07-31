@@ -1,9 +1,10 @@
 const { listProfileProperties } = require("../profile/profile-properties");
-const { classifyFieldIntent, evaluateFieldAnswerSafety } = require("./field-answer-safety");
+const { FIELD_INTENTS, classifyFieldIntent, evaluateFieldAnswerSafety } = require("./field-answer-safety");
 const { buildFieldFingerprint, createReviewAnswerProfileProperty, findReviewAnswerForField } = require("../review/review-resolution");
 const { resolveLocationProfileProperty } = require("./location-resolution");
 const { resolvePhoneProfileProperty } = require("./phone-resolution");
 const { resolveWorkEligibilityProfileProperty } = require("./work-eligibility-resolution");
+const { normalizeOptionText, resolveOption } = require("../actions/option-resolver");
 const { scoreTextMatch } = require("./text-similarity");
 
 const MATCHABLE_KINDS = new Set(["text-input", "checkbox", "radio", "selection", "editable", "file-upload", "interactive"]);
@@ -21,13 +22,13 @@ function matchFieldsToProfile(semanticPage, profile, options = {}) {
 		.map((field) => {
 		const fieldAnswerSafety = classifyFieldIntent(field);
 		const defaultReferralMatch = matchDefaultReferralSourceOption(field, fieldAnswerSafety, referralSourceDefaultFieldId);
-		if (defaultReferralMatch) return defaultReferralMatch;
+		if (defaultReferralMatch) return resolveChoiceGroupSelection(defaultReferralMatch);
 
 		const reviewAnswerMatch = matchExplicitReviewAnswer(field, fieldAnswerSafety, options.runtimeState || {});
-		if (reviewAnswerMatch) return reviewAnswerMatch;
+		if (reviewAnswerMatch) return resolveChoiceGroupSelection(reviewAnswerMatch);
 
 		const deterministicMatch = matchDeterministicProfileValue(field, fieldAnswerSafety, profile);
-		if (deterministicMatch) return deterministicMatch;
+		if (deterministicMatch) return resolveChoiceGroupSelection(deterministicMatch);
 
 		const candidates = rankProfileCandidates(field, profileProperties);
 		const bestCandidate = selectBestCandidate(field, candidates, threshold, fieldAnswerSafety);
@@ -46,7 +47,7 @@ function matchFieldsToProfile(semanticPage, profile, options = {}) {
 				candidates: candidates.slice(0, 3),
 			};
 			if (fieldAnswerSafety.riskLevel === "high") match.safetyDecision = safetyDecision;
-			return match;
+			return resolveChoiceGroupSelection(match);
 		}
 
 		const safetyDecision = evaluateFieldAnswerSafety(field, bestCandidate);
@@ -64,8 +65,76 @@ function matchFieldsToProfile(semanticPage, profile, options = {}) {
 			candidates: candidates.slice(0, 3),
 		};
 		if (fieldAnswerSafety.riskLevel === "high") match.safetyDecision = safetyDecision;
-		return match;
+		return resolveChoiceGroupSelection(match);
 	});
+}
+
+function resolveChoiceGroupSelection(match) {
+	const field = match && match.field || {};
+	const group = field.choiceGroup;
+	const property = match && match.matchedProfileProperty;
+	if (!group || !property) return match;
+
+	const requestedValues = Array.isArray(property.value) ? property.value : [property.value];
+	if (group.mode === "multiple") {
+		const controlledSource = property.source === "explicit-user-review"
+			|| property.source === "default-first-referral-source-option";
+		if (!controlledSource || !Array.isArray(property.value)) {
+			return blockChoiceGroupMatch(match, "choice-group-multiple-requires-review");
+		}
+		const selections = requestedValues.map((value) => findExactGroupOption(field.options, value));
+		if (selections.some((option) => !option)) return blockChoiceGroupMatch(match, "choice-group-option-not-available");
+		return withResolvedChoiceGroupSelection(match, selections);
+	}
+
+	if (requestedValues.length !== 1) return blockChoiceGroupMatch(match, "choice-group-single-value-required");
+	const resolution = resolveOption(field.options || [], requestedValues[0], {
+		fieldIntent: match.fieldAnswerSafety && match.fieldAnswerSafety.fieldIntent,
+		fieldLabel: field.label && field.label.text,
+		profileProperty: property,
+		selectionContext: property.selectionContext,
+		requiresSponsorship: property.requiresSponsorship,
+	});
+	if (resolution.status !== "matched") return blockChoiceGroupMatch(match, resolution.reason || "choice-group-option-not-available");
+	const selected = (field.options || []).find((option) => option.label === resolution.optionLabel);
+	return selected ? withResolvedChoiceGroupSelection(match, [selected]) : blockChoiceGroupMatch(match, "choice-group-option-not-available");
+}
+
+function withResolvedChoiceGroupSelection(match, selections) {
+	const value = match.field.choiceGroup.mode === "multiple"
+		? selections.map((option) => option.label)
+		: selections[0].label;
+	const matchedProfileProperty = { ...match.matchedProfileProperty, value };
+	const safetyDecision = match.fieldAnswerSafety && match.fieldAnswerSafety.riskLevel === "high"
+		? evaluateFieldAnswerSafety(match.field, matchedProfileProperty)
+		: match.safetyDecision;
+	if (safetyDecision && !safetyDecision.allowed) {
+		return { ...match, matchedProfileProperty: null, confidenceScore: 0, safetyDecision };
+	}
+	return {
+		...match,
+		matchedProfileProperty,
+		choiceGroupSelection: selections.map((option) => option.fieldId),
+		safetyDecision,
+	};
+}
+
+function blockChoiceGroupMatch(match, reason) {
+	const safetyDecision = match.fieldAnswerSafety && match.fieldAnswerSafety.riskLevel === "high"
+		? { ...(match.safetyDecision || match.fieldAnswerSafety), allowed: false, requiresReview: true, reason }
+		: match.safetyDecision;
+	return {
+		...match,
+		matchedProfileProperty: null,
+		confidenceScore: 0,
+		reasoning: `Choice group requires review: ${reason}.`,
+		safetyDecision,
+	};
+}
+
+function findExactGroupOption(options, value) {
+	const expected = normalizeOptionText(value);
+	return (options || []).find((option) => normalizeOptionText(option.label) === expected) || null;
 }
 
 function isSkippedField(field, runtimeState) {
@@ -84,6 +153,7 @@ function isManuallyCompletedField(field, runtimeState) {
 }
 
 function matchDeterministicProfileValue(field, fieldAnswerSafety, profile) {
+	if (field.choiceGroup && field.choiceGroup.mode === "multiple") return null;
 	const candidate = resolveWorkEligibilityProfileProperty(field, profile)
 		|| resolvePhoneProfileProperty(field, profile)
 		|| resolveLocationProfileProperty(field, profile);
@@ -128,11 +198,14 @@ function matchDeterministicProfileValue(field, fieldAnswerSafety, profile) {
 
 function matchDefaultReferralSourceOption(field, fieldAnswerSafety, referralSourceDefaultFieldId) {
 	if (field.id !== referralSourceDefaultFieldId) return null;
+	const groupedDefault = field.choiceGroup && field.options && field.options[0]
+		? [field.options[0].label]
+		: true;
 
 	const candidate = {
 		path: "referralSource",
-		value: true,
-		valueType: "boolean",
+		value: groupedDefault,
+		valueType: Array.isArray(groupedDefault) ? "array" : "boolean",
 		valuePresent: true,
 		source: "default-first-referral-source-option",
 		scope: "current-run",
@@ -215,12 +288,20 @@ function selectBestCandidate(field, candidates, threshold, fieldAnswerSafety) {
 }
 
 function isControlCompatibleCandidate(field, candidate) {
+	if (field.choiceGroup && field.choiceGroup.mode === "multiple") return false;
 	if (field.kind !== "checkbox") return true;
 	return candidate.valueType === "boolean";
 }
 
 function getMatchableFields(semanticPage) {
-	return (semanticPage.interactiveElements || []).filter((element) => {
+	const elements = semanticPage.interactiveElements || [];
+	const groupedMemberIds = new Set((semanticPage.choiceGroups || []).flatMap((group) => group.memberIds || []));
+	const fields = elements.filter((element) => !groupedMemberIds.has(element.id));
+	for (const group of semanticPage.choiceGroups || []) {
+		const field = buildChoiceGroupField(group, elements);
+		if (field) fields.push(field);
+	}
+	return fields.filter((element) => {
 		if (element.disabled || element.readonly) return false;
 		if (["listbox", "option"].includes(element.role)) return false;
 		if (!MATCHABLE_KINDS.has(element.kind)) return false;
@@ -228,8 +309,71 @@ function getMatchableFields(semanticPage) {
 	});
 }
 
+function buildChoiceGroupField(group, elements) {
+	const memberById = new Map(elements.map((element) => [element.id, element]));
+	const members = (group.memberIds || []).map((id) => memberById.get(id)).filter(Boolean);
+	if (members.length < 2) return null;
+	const question = String(group.question || "").trim();
+	const first = members[0];
+	const name = members.every((member) => member.name === first.name) ? first.name : "";
+	return {
+		id: group.id,
+		kind: group.mode === "single" ? "radio" : "checkbox",
+		role: group.mode === "single" ? "radiogroup" : "group",
+		tagName: "",
+		inputType: group.mode === "single" ? "radio" : "checkbox",
+		label: {
+			text: question || "Choice question",
+			source: `choice-group-${group.rule}`,
+			confidence: 1,
+		},
+		labelCandidates: question ? [{ text: question, source: `choice-group-${group.rule}`, confidence: 1 }] : [],
+		placeholder: "",
+		required: members.some((member) => member.required),
+		disabled: members.every((member) => member.disabled),
+		readonly: members.every((member) => member.readonly),
+		state: {
+			selectedLabels: members.filter((member) => member.state && member.state.checked).map((member) => member.label && member.label.text).filter(Boolean),
+		},
+		validation: {
+			valid: members.every((member) => !member.validation || member.validation.valid !== false),
+			message: members.map((member) => member.validation && member.validation.message).find(Boolean) || "",
+		},
+		options: members.map((member) => ({
+			label: member.label && member.label.text || "",
+			fieldId: member.id,
+			domId: member.domId || "",
+			name: member.name || "",
+			value: member.value || "",
+			role: member.role || "",
+			kind: member.kind,
+			disabled: member.disabled,
+			checked: Boolean(member.state && member.state.checked),
+		})).filter((option) => option.label),
+		bounds: first.bounds,
+		semanticPath: first.semanticPath || [],
+		domId: "",
+		name,
+		ariaLabelledBy: "",
+		choiceGroup: {
+			id: group.id,
+			mode: group.mode,
+			rule: group.rule,
+			memberIds: group.memberIds || [],
+		},
+		evidence: {
+			visibleText: question,
+			choiceGroupRule: group.rule,
+		},
+	};
+}
+
 
 function findDefaultReferralSourceFieldId(fields) {
+	const groupedField = fields.find((field) => field.choiceGroup
+		&& field.kind === "checkbox"
+		&& classifyFieldIntent(field).fieldIntent === FIELD_INTENTS.REFERRAL_SOURCE);
+	if (groupedField) return groupedField.id;
 	const referralGroup = getReferralSourceCheckboxGroup(fields);
 	return referralGroup.length ? referralGroup[0].id : "";
 }
@@ -330,6 +474,7 @@ function describeField(field) {
 		tagName: field.tagName || "",
 		domId: field.domId || "",
 		name: field.name || "",
+		value: field.value || "",
 		ariaLabelledBy: field.ariaLabelledBy || "",
 		semanticPath: field.semanticPath || [],
 		label: field.label,
@@ -341,6 +486,7 @@ function describeField(field) {
 		validation: field.validation || { valid: true, message: "" },
 		options: field.options || [],
 		constraints: field.constraints || {},
+		choiceGroup: field.choiceGroup || null,
 	};
 }
 

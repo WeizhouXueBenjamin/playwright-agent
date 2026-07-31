@@ -194,14 +194,13 @@ async function parseItemDecision({ rl, item, command, errorOutput }) {
 
 	if (item.type === REVIEW_TYPES.CONSENT_AUTHORIZATION) {
 		if ((item.options || []).length) {
-			const optionIndex = Number(normalized);
-			if (Number.isInteger(optionIndex) && optionIndex >= 1 && optionIndex <= item.options.length) {
-				const selectedOption = item.options[optionIndex - 1];
-				return { action: "authorize", value: selectedOption.label };
-			}
+			const selected = parseOptionNumbers(normalized, item);
+			if (selected) return { action: "authorize", value: item.metadata && item.metadata.multiple ? selected : selected[0] };
 			if (normalized === "m" || normalized === "manual") return askForManualCompletion(rl, errorOutput);
 			if (normalized === "d" || normalized === "decline") return { action: "decline" };
-			errorOutput.write(`Choose an option number from 1 to ${item.options.length}, M, D, or Q.\n`);
+			errorOutput.write(item.metadata && item.metadata.multiple
+				? `Choose one or more option numbers from 1 to ${item.options.length}, separated by commas, or M, D, Q.\n`
+				: `Choose an option number from 1 to ${item.options.length}, M, D, or Q.\n`);
 			return null;
 		}
 		if (item.controlType === "selection") {
@@ -231,14 +230,14 @@ async function parseItemDecision({ rl, item, command, errorOutput }) {
 	}
 
 	if (item.type === REVIEW_TYPES.OPTION_SELECTION) {
-		const optionIndex = Number(normalized);
-		if (Number.isInteger(optionIndex) && optionIndex >= 1 && optionIndex <= item.options.length) {
-			return { action: "select", value: item.options[optionIndex - 1].label };
-		}
+		const selected = parseOptionNumbers(normalized, item);
+		if (selected) return { action: "select", value: item.metadata && item.metadata.multiple ? selected : selected[0] };
 		if (normalized === "p" || normalized === "prefer-not-to-answer") return { action: "prefer-not-to-answer" };
 		if (normalized === "s" || normalized === "skip") return { action: "skip" };
 		if (normalized === "m" || normalized === "manual") return askForManualCompletion(rl, errorOutput);
-		errorOutput.write("Choose an option number, P, M, S, or Q.\n");
+		errorOutput.write(item.metadata && item.metadata.multiple
+			? "Choose one or more comma-separated option numbers, P, M, S, or Q.\n"
+			: "Choose an option number, P, M, S, or Q.\n");
 		return null;
 	}
 
@@ -258,6 +257,16 @@ async function parseItemDecision({ rl, item, command, errorOutput }) {
 	if (command) return { action: "provide-value", value: command };
 	errorOutput.write("Enter a value, M, S, or Q.\n");
 	return null;
+}
+
+function parseOptionNumbers(value, item) {
+	const parts = String(value || "").split(",").map((part) => part.trim()).filter(Boolean);
+	if (!parts.length) return null;
+	if (!(item.metadata && item.metadata.multiple) && parts.length !== 1) return null;
+	const indexes = parts.map(Number);
+	if (indexes.some((index) => !Number.isInteger(index) || index < 1 || index > item.options.length)) return null;
+	if (new Set(indexes).size !== indexes.length) return null;
+	return indexes.map((index) => item.options[index - 1].label);
 }
 
 async function askForManualCompletion(rl, errorOutput) {
@@ -292,6 +301,7 @@ function formatCheckpointItem(item, position = null) {
 	if (item.proposedValue) lines.push(`Suggested answer: ${item.proposedValue}`);
 	if (item.options && item.options.length) {
 		item.options.forEach((option, index) => lines.push(`${index + 1}. ${option.label}`));
+		if (item.metadata && item.metadata.multiple) lines.push("Select one or more (comma-separated):");
 	}
 	if (item.type === REVIEW_TYPES.CONSENT_AUTHORIZATION && !(item.options || []).length) {
 		lines.push("[A] Authorize", "[D] Decline");
