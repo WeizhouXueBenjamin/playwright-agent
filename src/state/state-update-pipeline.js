@@ -2,7 +2,6 @@ function buildObservationStatePatch(previousState, observation, date = new Date(
 	const timestamp = date.toISOString();
 	const semanticPage = observation.semanticPage;
 	const detectedFields = (semanticPage.interactiveElements || []).map(toVerifiedFieldFact);
-	const detectedForms = (semanticPage.forms || []).map(toVerifiedFormFact);
 	const validationErrors = detectedFields
 		.filter((field) => field.validation && field.validation.valid === false)
 		.map((field) => ({
@@ -15,43 +14,123 @@ function buildObservationStatePatch(previousState, observation, date = new Date(
 	return {
 		currentUrl: semanticPage.url,
 		currentPageTitle: semanticPage.title,
-		currentBrowserState: "observed",
-		detectedForms,
+		finalSubmissionTriggered: previousState.finalSubmissionTriggered === true || semanticPage.finalSubmissionTriggered === true,
 		detectedFields,
 		remainingRequiredFields: getRemainingRequiredFields(detectedFields),
 		validationErrors,
-		navigationHistory: appendNavigation(previousState.navigationHistory, semanticPage.url, semanticPage.title, timestamp),
+		updatedAt: timestamp,
+	};
+}
+
+function buildSkippedFieldStatePatch(previousState, reviewPrompt, date = new Date()) {
+	const timestamp = date.toISOString();
+	const skippedField = {
+		fieldFingerprint: reviewPrompt.fieldFingerprint || "",
+		fieldId: reviewPrompt.fieldId || "",
+		fieldIntent: reviewPrompt.fieldIntent || "unknown",
+		label: toLabelFact(reviewPrompt.fieldLabel),
+		controlType: reviewPrompt.controlType || "",
+		resolutionMethod: "skipped",
+		skippedAt: timestamp,
+	};
+
+	return {
+		skippedFields: upsertByFingerprint(previousState.skippedFields || [], skippedField),
+		currentExecutionStatus: "running",
+		status: "running",
+		updatedAt: timestamp,
+	};
+}
+
+function buildManualCompletionStatePatch(previousState, reviewPrompt, date = new Date()) {
+	const timestamp = date.toISOString();
+	const manualField = {
+		fieldFingerprint: reviewPrompt.fieldFingerprint || "",
+		fieldId: reviewPrompt.fieldId || "",
+		fieldIntent: reviewPrompt.fieldIntent || "unknown",
+		label: toLabelFact(reviewPrompt.fieldLabel),
+		controlType: reviewPrompt.controlType || "",
+		resolutionMethod: "manual",
+		verifiedAt: timestamp,
+	};
+
+	return {
+		completedFields: upsertByFingerprint(previousState.completedFields || [], manualField),
+		currentExecutionStatus: "running",
+		status: "running",
 		updatedAt: timestamp,
 	};
 }
 
 function buildSuccessfulActionStatePatch(previousState, step, verification, date = new Date()) {
 	const timestamp = date.toISOString();
-	const completedActions = [
-		...previousState.completedActions,
+	const recentActions = [
+		...(previousState.recentActions || []),
 		{
 			action: step.action,
 			fieldId: step.field.id,
 			fieldLabel: toLabelFact(step.field.label),
 			profilePropertyPath: step.profileProperty ? step.profileProperty.path : "",
+			provenance: step.provenance || {},
 			verifiedAt: timestamp,
 			verification: {
 				expected: verification.expected,
 				actual: verification.actual,
 			},
 		},
-	];
+	].slice(-10);
 
 	const completedFields = step.profileProperty
-		? upsertCompletedField(previousState.completedFields, step, verification, timestamp)
-		: previousState.completedFields;
+		? upsertCompletedField(previousState.completedFields || [], step, verification, timestamp)
+		: previousState.completedFields || [];
 
 	return {
-		completedActions,
+		recentActions,
 		completedFields,
-		remainingRequiredFields: previousState.remainingRequiredFields.filter((field) => field.id !== step.field.id),
-		uploadedFiles: updateUploadedFiles(previousState.uploadedFiles, step, verification, timestamp),
+		remainingRequiredFields: (previousState.remainingRequiredFields || []).filter((field) => field.id !== step.field.id),
+		uploadedFiles: updateUploadedFiles(previousState.uploadedFiles || [], step, verification, timestamp),
 		currentExecutionStatus: "running",
+		status: "running",
+		updatedAt: timestamp,
+	};
+}
+
+function buildReviewAnswerStatePatch(previousState, reviewAnswer, date = new Date()) {
+	const timestamp = date.toISOString();
+	const reviewAnswers = upsertReviewAnswer(previousState.reviewAnswers || [], reviewAnswer);
+
+	return {
+		reviewAnswers,
+		currentExecutionStatus: "running",
+		status: "running",
+		updatedAt: timestamp,
+	};
+}
+
+function buildReviewPromptStatePatch(previousState, reviewPrompt, date = new Date()) {
+	const timestamp = date.toISOString();
+
+	return {
+		pendingReviewPrompt: reviewPrompt,
+		manualReview: [...(previousState.manualReview || []), reviewPrompt],
+		updatedAt: timestamp,
+	};
+}
+
+function buildReviewCheckpointStatePatch(previousState, checkpoint, date = new Date()) {
+	const timestamp = date.toISOString();
+	const existing = previousState.reviewCheckpoints || [];
+	const reviewCheckpoints = upsertCheckpoint(existing, checkpoint);
+
+	return {
+		reviewCheckpoints,
+		pendingReviewCheckpoint: checkpoint.status === "waiting-for-user" ? checkpoint : null,
+		interactiveReview: {
+			enabled: true,
+			checkpointCount: reviewCheckpoints.length,
+			resolvedItemCount: reviewCheckpoints.reduce((total, item) => total + (item.decisions || []).length, 0),
+		},
+		manualReview: mergePromptsFromCheckpoint(previousState.manualReview || [], checkpoint),
 		updatedAt: timestamp,
 	};
 }
@@ -59,21 +138,16 @@ function buildSuccessfulActionStatePatch(previousState, step, verification, date
 function buildStatusStatePatch(status, date = new Date()) {
 	return {
 		currentExecutionStatus: status,
-		currentBrowserState: isTerminalStatus(status) ? "terminal" : "active",
+		status,
 		updatedAt: date.toISOString(),
 	};
 }
 
-function isTerminalStatus(status) {
-	return [
-		"awaiting-human-confirmation",
-		"completed",
-		"max-cycles-reached",
-		"needs-review",
-		"needs-user-confirmation",
-		"recovery-failed",
-		"verification-failed",
-	].includes(status);
+function buildDecisionGateStatePatch(previousState, gateResult, date = new Date()) {
+	return {
+		decisionGateResults: [...(previousState.decisionGateResults || []), summarizeGateResult(gateResult)].slice(-20),
+		updatedAt: date.toISOString(),
+	};
 }
 
 function toVerifiedFieldFact(field) {
@@ -94,16 +168,6 @@ function toVerifiedFieldFact(field) {
 			disabled: Boolean(option.disabled),
 		})),
 		validation: sanitizeValidation(field.validation || {}),
-	};
-}
-
-function toVerifiedFormFact(form) {
-	return {
-		id: form.id,
-		label: form.label || "",
-		method: form.method || "",
-		actionPresent: Boolean(form.actionPresent),
-		controls: form.controls || [],
 	};
 }
 
@@ -149,25 +213,15 @@ function isFieldCompletedByObservedState(field) {
 	return Boolean(field.state.value);
 }
 
-function appendNavigation(history, url, title, timestamp) {
-	const lastEntry = history[history.length - 1];
-	if (lastEntry && lastEntry.url === url && lastEntry.title === title) return history;
-
-	return [
-		...history,
-		{
-			url,
-			title,
-			observedAt: timestamp,
-		},
-	];
-}
-
 function upsertCompletedField(completedFields, step, verification, timestamp) {
 	const completedField = {
 		fieldId: step.field.id,
 		label: toLabelFact(step.field.label),
 		profilePropertyPath: step.profileProperty.path,
+		source: step.profileProperty.source || "",
+		resolutionMethod: getResolutionMethod(step),
+		provenance: step.provenance || {},
+		reviewAnswerFingerprint: step.profileProperty.reviewAnswer ? step.profileProperty.reviewAnswer.fieldFingerprint : "",
 		action: step.action,
 		verifiedValue: verification.actual,
 		verifiedAt: timestamp,
@@ -196,8 +250,65 @@ function updateUploadedFiles(uploadedFiles, step, verification, timestamp) {
 	];
 }
 
+function getResolutionMethod(step) {
+	if (step.profileProperty && step.profileProperty.source === "explicit-user-review") {
+		return step.profileProperty.reviewAnswer && step.profileProperty.reviewAnswer.resolutionMethod || "user-confirmed";
+	}
+	if (step.profileProperty && step.profileProperty.source === "codex-semantic") return "codex-semantic";
+	if (step.profileProperty && step.profileProperty.source === "manual") return "manual";
+	if (step.profileProperty && step.profileProperty.source) return "direct-alias";
+	return "direct-alias";
+}
+
+function upsertReviewAnswer(reviewAnswers, reviewAnswer) {
+	const existingIndex = reviewAnswers.findIndex((answer) => {
+		return answer.fieldFingerprint === reviewAnswer.fieldFingerprint
+			&& answer.fieldIntent === reviewAnswer.fieldIntent
+			&& answer.statementFingerprint === reviewAnswer.statementFingerprint;
+	});
+	if (existingIndex === -1) return [...reviewAnswers, reviewAnswer];
+	return reviewAnswers.map((answer, index) => index === existingIndex ? reviewAnswer : answer);
+}
+
+function upsertCheckpoint(checkpoints, checkpoint) {
+	const existingIndex = checkpoints.findIndex((item) => item.id === checkpoint.id);
+	if (existingIndex === -1) return [...checkpoints, checkpoint];
+	return checkpoints.map((item, index) => index === existingIndex ? checkpoint : item);
+}
+
+function mergePromptsFromCheckpoint(manualReview, checkpoint) {
+	const prompts = (checkpoint.items || []).map((item) => item.legacyPrompt).filter(Boolean);
+	const merged = [...manualReview];
+	for (const prompt of prompts) {
+		if (merged.some((item) => item.fieldFingerprint === prompt.fieldFingerprint)) continue;
+		merged.push(prompt);
+	}
+	return merged;
+}
+
+function upsertByFingerprint(items, item) {
+	const fingerprint = item.fieldFingerprint || "";
+	const existingIndex = items.findIndex((existing) => existing.fieldFingerprint === fingerprint && fingerprint);
+	if (existingIndex === -1) return [...items, item];
+	return items.map((existing, index) => index === existingIndex ? item : existing);
+}
+
+function summarizeGateResult(gateResult = {}) {
+	return {
+		type: gateResult.type || "",
+		reason: gateResult.reason || "",
+		provenance: gateResult.provenance || {},
+	};
+}
+
 module.exports = {
+	buildDecisionGateStatePatch,
 	buildObservationStatePatch,
+	buildReviewAnswerStatePatch,
+	buildReviewCheckpointStatePatch,
+	buildReviewPromptStatePatch,
+	buildManualCompletionStatePatch,
+	buildSkippedFieldStatePatch,
 	buildStatusStatePatch,
 	buildSuccessfulActionStatePatch,
 };

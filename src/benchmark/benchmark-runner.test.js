@@ -20,6 +20,8 @@ async function main() {
 	assert.equal(result.report.summary.successfulCases, 1);
 	assert.equal(result.report.summary.totalActionCount > 0, true);
 	assert.equal(result.report.summary.totalRetries, 1);
+	assert.equal(typeof result.report.summary.healthScore, "number");
+	assert.equal(result.report.health.mode, "lightweight-benchmark-health");
 	assert.equal(result.report.summary.averageActionConfidence !== null, true);
 	assert.equal(result.report.caseResults[0].statistics.runtimeSnapshotCount > 0, true);
 	assert.equal(result.report.caseResults[0].artifacts.screenshots.length, 1);

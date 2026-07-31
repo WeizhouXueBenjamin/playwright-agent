@@ -8,6 +8,28 @@ async function launchChromium(options = {}) {
 	});
 }
 
+async function launchPersistentChromiumContext(options = {}) {
+	const {
+		channel,
+		chromiumSandbox,
+		headless = true,
+		userDataDir,
+		viewport = { width: 1365, height: 900 },
+	} = options;
+
+	if (!userDataDir) {
+		throw new Error("Persistent Chromium context requires userDataDir.");
+	}
+
+	return chromium.launchPersistentContext(userDataDir, {
+		channel,
+		chromiumSandbox,
+		headless,
+		viewport,
+	});
+}
+
 module.exports = {
 	launchChromium,
+	launchPersistentChromiumContext,
 };

@@ -4,7 +4,7 @@ async function main() {
 	const url = process.argv[2];
 
 	if (!url) {
-		throw new Error("Usage: npm run capture -- <url>");
+		throw new Error("Usage: pnpm capture -- <url>");
 	}
 
 	const parsedUrl = new URL(url);

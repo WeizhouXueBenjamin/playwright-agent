@@ -1,24 +1,36 @@
+const { buildRuntimeStateContract } = require("../contracts/runtime-state");
+
 function createInitialRuntimeState(goal = "") {
 	const now = new Date().toISOString();
 
-	return {
+	return buildRuntimeStateContract({
 		schemaVersion: 1,
 		goal,
 		currentUrl: "",
 		currentPageTitle: "",
-		currentBrowserState: "initialized",
-		detectedForms: [],
 		detectedFields: [],
 		completedFields: [],
+		skippedFields: [],
+		manualReview: [],
+		reviewCheckpoints: [],
+		pendingReviewCheckpoint: null,
+		interactiveReview: {
+			enabled: false,
+			checkpointCount: 0,
+			resolvedItemCount: 0,
+		},
+		reviewAnswers: [],
 		remainingRequiredFields: [],
 		uploadedFiles: [],
-		navigationHistory: [],
-		completedActions: [],
+		recentActions: [],
+		decisionGateResults: [],
+		finalSubmissionTriggered: false,
 		currentExecutionStatus: "initialized",
+		status: "initialized",
 		validationErrors: [],
 		createdAt: now,
 		updatedAt: now,
-	};
+	});
 }
 
 module.exports = {

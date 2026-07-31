@@ -1,3 +1,5 @@
+const { buildCapabilityStep } = require("../capabilities/capability-registry");
+
 const DEFAULT_MIN_CONFIDENCE = 70;
 
 function buildExecutionPlan(matches, options = {}) {
@@ -12,7 +14,7 @@ function buildExecutionPlan(matches, options = {}) {
 			continue;
 		}
 
-		steps.push(createActionStep(match, steps.length + 1));
+		steps.push(...createActionSteps(match, steps.length + 1));
 	}
 
 	return {
@@ -29,12 +31,24 @@ function buildExecutionPlan(matches, options = {}) {
 }
 
 function getReviewItem(match, minConfidence) {
+	if (match.safetyDecision && !match.safetyDecision.allowed) {
+		return {
+			field: match.field,
+			matchedProfileProperty: match.matchedProfileProperty ? withoutRawValue(match.matchedProfileProperty, { includePreview: true }) : null,
+			reason: match.safetyDecision.reason,
+			message: "Sensitive field requires user review before the agent can answer it.",
+			confidenceScore: match.confidenceScore,
+			safetyDecision: match.safetyDecision,
+		};
+	}
+
 	if (!match.matchedProfileProperty) {
 		return {
 			field: match.field,
 			reason: "unmatched-field",
 			message: "No profile property was confidently matched to this field.",
 			confidenceScore: match.confidenceScore,
+			safetyDecision: match.safetyDecision || (match.field.choiceGroup ? match.fieldAnswerSafety : undefined),
 		};
 	}
 
@@ -45,6 +59,7 @@ function getReviewItem(match, minConfidence) {
 			reason: "low-confidence",
 			message: `Match confidence ${match.confidenceScore} is below the required ${minConfidence}.`,
 			confidenceScore: match.confidenceScore,
+			safetyDecision: match.safetyDecision,
 		};
 	}
 
@@ -55,6 +70,7 @@ function getReviewItem(match, minConfidence) {
 			reason: "missing-profile-value",
 			message: "The matched profile property has no usable value.",
 			confidenceScore: match.confidenceScore,
+			safetyDecision: match.safetyDecision,
 		};
 	}
 
@@ -62,45 +78,99 @@ function getReviewItem(match, minConfidence) {
 }
 
 function createActionStep(match, order) {
-	return {
+	const actionValue = getActionValue(match);
+	const step = buildCapabilityStep({
 		id: `step-${order}`,
 		order,
-		action: inferAction(match.field),
 		field: match.field,
 		profileProperty: withoutRawValue(match.matchedProfileProperty),
-		actionValue: match.matchedProfileProperty.value,
-		valuePreview: previewValue(match.matchedProfileProperty.value),
+		actionValue,
+		valuePreview: previewValue(actionValue),
 		confidenceScore: match.confidenceScore,
 		reasoning: match.reasoning,
-		verification: {
-			expectedState: inferExpectedState(match.field),
-			required: true,
-		},
+	});
+	if (match.safetyDecision) step.safetyDecision = match.safetyDecision;
+	return step;
+}
+
+function createActionSteps(match, startOrder) {
+	if (!match.field.choiceGroup) return [createActionStep(match, startOrder)];
+	const values = Array.isArray(match.matchedProfileProperty.value)
+		? match.matchedProfileProperty.value
+		: [match.matchedProfileProperty.value];
+	const selectedOptions = values.map((value) => {
+		return (match.field.options || []).find((option) => option.label === value);
+	}).filter(Boolean);
+	const expectation = {
+		id: match.field.choiceGroup.id,
+		mode: match.field.choiceGroup.mode,
+		selectedMemberIds: selectedOptions.map((option) => option.fieldId),
+		currentSelectedMemberIds: (match.field.options || []).filter((option) => option.checked).map((option) => option.fieldId),
+		members: (match.field.options || []).map((option) => ({
+			fieldId: option.fieldId,
+			domId: option.domId || "",
+			name: option.name || "",
+			value: option.value || "",
+			role: option.role || "",
+			kind: option.kind,
+			label: option.label,
+		})),
 	};
+
+	return selectedOptions.map((option, index) => {
+		const actionValue = match.field.choiceGroup.mode === "single" ? option.label : true;
+		const step = buildCapabilityStep({
+			id: `step-${startOrder + index}`,
+			order: startOrder + index,
+			field: {
+				id: option.fieldId,
+				kind: option.kind,
+				role: option.role,
+				domId: option.domId,
+				name: option.name,
+				value: option.value,
+				label: { text: option.label, source: "choice-group-option", confidence: 1 },
+				state: { checked: Boolean(option.checked) },
+			},
+			profileProperty: withoutRawValue(match.matchedProfileProperty),
+			actionValue,
+			valuePreview: previewValue(actionValue),
+			confidenceScore: match.confidenceScore,
+			reasoning: match.reasoning,
+		});
+		step.choiceGroupField = match.field;
+		step.choiceGroupSelectedValues = values;
+		step.choiceGroupExpectation = expectation;
+		step.verifyChoiceGroup = index === selectedOptions.length - 1;
+		if (match.safetyDecision) step.safetyDecision = match.safetyDecision;
+		return step;
+	});
 }
 
-function inferAction(field) {
-	if (field.kind === "checkbox") return "set-checkbox";
-	if (field.kind === "file-upload") return "upload-file";
-	if (field.kind === "radio") return "select-option";
-	if (field.kind === "selection") return "select-option";
-	if (field.kind === "editable") return "fill-text";
-	return "fill-text";
-}
-
-function inferExpectedState(field) {
-	if (field.kind === "checkbox") return "checked-state-matches-profile-value";
-	if (field.kind === "file-upload") return "uploaded-file-matches-profile-value";
-	if (field.kind === "radio" || field.kind === "selection") return "selected-option-matches-profile-value";
-	return "field-value-matches-profile-value";
-}
-
-function withoutRawValue(profileProperty) {
-	return {
+function withoutRawValue(profileProperty, options = {}) {
+	const result = {
 		path: profileProperty.path,
 		valueType: profileProperty.valueType,
 		valuePresent: profileProperty.valuePresent,
 	};
+	if (profileProperty.source) result.source = profileProperty.source;
+	if (profileProperty.selectionContext) result.selectionContext = profileProperty.selectionContext;
+	if (profileProperty.requiresSponsorship !== undefined) result.requiresSponsorship = profileProperty.requiresSponsorship;
+	if (profileProperty.scope) result.scope = profileProperty.scope;
+	if (profileProperty.reviewAnswer) result.reviewAnswer = profileProperty.reviewAnswer;
+	if (options.includePreview) result.valuePreview = previewValue(profileProperty.value);
+	return result;
+}
+
+function getActionValue(match) {
+	const value = match.matchedProfileProperty.value;
+	if (match.field.choiceGroup) return value;
+	if (!match.matchedProfileProperty.reviewAnswer) return value;
+	if (match.field.kind !== "checkbox") return value;
+	const normalized = String(value || "").trim().toLowerCase();
+	if (["yes", "true", "y", "agree", "i agree"].includes(normalized)) return true;
+	if (["no", "false", "n"].includes(normalized)) return false;
+	return value;
 }
 
 function previewValue(value) {

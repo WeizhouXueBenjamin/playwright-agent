@@ -23,9 +23,12 @@ class BrowserAIAgent {
 			goal,
 			status: result.status,
 			reason: result.reason,
+			reviewPrompt: result.reviewPrompt || null,
+			reviewPromptText: result.reviewPromptText || "",
 			runtimeState: result.runtimeState,
 			decisionLog: buildDecisionLog(result),
 			lifecycle: result.lifecycle,
+			finalReview: result.finalReview || null,
 		};
 	}
 }

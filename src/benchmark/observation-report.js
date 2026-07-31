@@ -23,12 +23,12 @@ function buildObservationReport(input) {
 		capturedAt: capturedAt.toISOString(),
 		stability,
 		summary: {
-			detectedFormCount: runtimeState.detectedForms.length,
-			detectedFieldCount: runtimeState.detectedFields.length,
-			requiredFieldCount: runtimeState.remainingRequiredFields.length,
-			consoleErrorCount: diagnostics.consoleErrors.length,
-			networkErrorCount: diagnostics.networkErrors.length,
-			reasoningEventCount: reasoningLog.length,
+			detectedFormCount: Array.isArray(runtimeState.detectedForms) ? runtimeState.detectedForms.length : 0,
+			detectedFieldCount: (runtimeState.detectedFields || []).length,
+			requiredFieldCount: (runtimeState.remainingRequiredFields || []).length,
+			consoleErrorCount: (diagnostics.consoleErrors || []).length,
+			networkErrorCount: (diagnostics.networkErrors || []).length,
+			reasoningEventCount: (reasoningLog || []).length,
 		},
 		artifacts,
 	};

@@ -41,6 +41,8 @@ async function normalizeCase(benchmarkCase, datasetPath) {
 		coverLetter: resolveOptionalPath(datasetDir, benchmarkCase.coverLetterPath || benchmarkCase.coverLetter),
 		tags: benchmarkCase.tags || [],
 		notes: benchmarkCase.notes || "",
+		expectedStatus: benchmarkCase.expectedStatus || "",
+		expectedProductOutcome: benchmarkCase.expectedProductOutcome || "",
 		options: benchmarkCase.options || {},
 	};
 }

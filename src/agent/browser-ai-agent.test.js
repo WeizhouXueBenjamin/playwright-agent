@@ -22,7 +22,7 @@ async function main() {
 	assert.equal(result.runtimeState.goal, "Complete the job application and stop before final submission.");
 	assert.equal(result.runtimeState.completedFields.some((field) => field.profilePropertyPath === "resumePath"), true);
 	assert.equal(result.runtimeState.completedFields.some((field) => field.profilePropertyPath === "coverLetterPath"), true);
-	assert.equal(result.runtimeState.completedActions.some((action) => action.action === "upload-file"), true);
+	assert.equal(result.runtimeState.recentActions.some((action) => action.action === "upload-file"), true);
 	assert.equal(result.decisionLog.some((entry) => entry.action && entry.action.type === "upload-file"), true);
 	assert.equal(result.decisionLog.some((entry) => entry.decision && entry.decision.reasoning === "Handle cookie-banner."), true);
 	assert.equal(JSON.stringify(result.runtimeState).includes("reasoning"), false);

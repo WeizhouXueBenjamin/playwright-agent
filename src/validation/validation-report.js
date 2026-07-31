@@ -21,6 +21,8 @@ function buildValidationReport(input) {
 			confidence: componentValidation.confidence,
 			totalDetectedComponents: componentValidation.coverage.totalDetectedComponents,
 			coverageRatio: componentValidation.coverage.coverageRatio,
+			legacyCoverageRatio: componentValidation.coverage.legacyCoverageRatio,
+			applicableCoverageRatio: componentValidation.coverage.applicableCoverageRatio,
 			missingComponentCount: componentValidation.missingComponents.length,
 			unsupportedComponentCount: componentValidation.unsupportedComponents.length,
 			potentialRiskCount: componentValidation.potentialRisks.length,

@@ -1,0 +1,44 @@
+{
+	"name": "mvp-core-offline",
+	"version": "1",
+	"description": "Offline authored fixtures for the MVP product workflow.",
+	"cases": [
+		{
+			"id": "core-single-page",
+			"name": "Single-page form with identity, select, checkbox, upload, and submit protection",
+			"url": "data:text/html,%3C!doctype%20html%3E%3Chtml%3E%3Cbody%3E%3Cform%20onsubmit%3D%22document.querySelector('%23submitted').textContent%3D'submitted'%3Breturn%20false%3B%22%3E%3Clabel%20for%3D%22first%22%3EFirst%20name%3C%2Flabel%3E%3Cinput%20id%3D%22first%22%20name%3D%22firstName%22%20required%3E%3Clabel%20for%3D%22country%22%3ECountry%3C%2Flabel%3E%3Cselect%20id%3D%22country%22%20name%3D%22country%22%20required%3E%3Coption%20value%3D%22%22%3ESelect...%3C%2Foption%3E%3Coption%3ENew%20Zealand%3C%2Foption%3E%3C%2Fselect%3E%3Clabel%20for%3D%22resume%22%3EResume%3C%2Flabel%3E%3Cinput%20id%3D%22resume%22%20type%3D%22file%22%3E%3Clabel%3E%3Cinput%20id%3D%22referral%22%20type%3D%22checkbox%22%20name%3D%22referral%22%3E%20LinkedIn%3C%2Flabel%3E%3Cbutton%20type%3D%22submit%22%3ESubmit%20application%3C%2Fbutton%3E%3C%2Fform%3E%3Cdiv%20id%3D%22submitted%22%3Enot%20submitted%3C%2Fdiv%3E%3C%2Fbody%3E%3C%2Fhtml%3E",
+			"profile": {
+				"firstName": "Aroha",
+				"country": "New Zealand"
+			},
+			"resumePath": "../data/profile-full-stack.json",
+			"tags": ["offline", "identity", "upload", "final-submit-protection"],
+			"expectedStatus": "awaiting-human-confirmation",
+			"options": {
+				"maxCycles": 10
+			}
+		},
+		{
+			"id": "core-login-blocker",
+			"name": "Login blocker",
+			"url": "data:text/html,%3C!doctype%20html%3E%3Chtml%3E%3Cbody%3E%3Cform%3E%3Clabel%20for%3D%22email%22%3EEmail%3C%2Flabel%3E%3Cinput%20id%3D%22email%22%20type%3D%22email%22%3E%3Clabel%20for%3D%22password%22%3EPassword%3C%2Flabel%3E%3Cinput%20id%3D%22password%22%20type%3D%22password%22%3E%3Cbutton%20type%3D%22submit%22%3ESign%20in%3C%2Fbutton%3E%3C%2Fform%3E%3C%2Fbody%3E%3C%2Fhtml%3E",
+			"profile": {},
+			"tags": ["offline", "login-required"],
+			"expectedStatus": "needs-review",
+			"options": {
+				"maxCycles": 5
+			}
+		},
+		{
+			"id": "core-unavailable",
+			"name": "Unavailable application",
+			"url": "data:text/html,%3C!doctype%20html%3E%3Chtml%3E%3Cbody%3E%3Ch1%3EThis%20job%20is%20no%20longer%20available%3C%2Fh1%3E%3Cp%3EWe%20are%20no%20longer%20accepting%20applications.%3C%2Fp%3E%3C%2Fbody%3E%3C%2Fhtml%3E",
+			"profile": {},
+			"tags": ["offline", "application-unavailable"],
+			"expectedStatus": "needs-review",
+			"options": {
+				"maxCycles": 5
+			}
+		}
+	]
+}

@@ -1,0 +1,35 @@
+{
+	"name": "selected-offline-replay",
+	"version": "1",
+	"description": "Selected anonymized replay cases only; no public URLs, selectors, credentials, cookies, or generated personal prose.",
+	"cases": [
+		{
+			"id": "replay-salary-safeguard",
+			"name": "Salary expectation requires explicit review",
+			"url": "data:text/html,%3C!doctype%20html%3E%3Chtml%3E%3Cbody%3E%3Cform%20onsubmit%3D%22document.querySelector('%23submitted').textContent%3D'submitted'%3Breturn%20false%3B%22%3E%3Clabel%20for%3D%22first%22%3EFirst%20name%3C%2Flabel%3E%3Cinput%20id%3D%22first%22%20name%3D%22firstName%22%20required%3E%3Clabel%20for%3D%22salary%22%3EExpected%20salary%3C%2Flabel%3E%3Cinput%20id%3D%22salary%22%20name%3D%22salary%22%20required%3E%3Cbutton%20type%3D%22submit%22%3ESubmit%20application%3C%2Fbutton%3E%3C%2Fform%3E%3Cdiv%20id%3D%22submitted%22%3Enot%20submitted%3C%2Fdiv%3E%3C%2Fbody%3E%3C%2Fhtml%3E",
+			"profile": {
+				"firstName": "Aroha",
+				"jobTitle": "Full-stack engineer"
+			},
+			"tags": ["offline", "salary-safeguard", "needs-review"],
+			"expectedStatus": "needs-review",
+			"options": {
+				"maxCycles": 8
+			}
+		},
+		{
+			"id": "replay-work-eligibility-controlled-option",
+			"name": "Work eligibility controlled option equivalence",
+			"url": "data:text/html,%3C!doctype%20html%3E%3Chtml%3E%3Cbody%3E%3Cform%20onsubmit%3D%22document.querySelector('%23submitted').textContent%3D'submitted'%3Breturn%20false%3B%22%3E%3Clabel%20for%3D%22first%22%3EFirst%20name%3C%2Flabel%3E%3Cinput%20id%3D%22first%22%20name%3D%22firstName%22%20required%3E%3Clabel%20for%3D%22work%22%3EWork%20Eligibility*%3C%2Flabel%3E%3Cselect%20id%3D%22work%22%20name%3D%22workEligibility%22%20required%3E%3Coption%20value%3D%22%22%3ESelect...%3C%2Foption%3E%3Coption%3ECitizen%20or%20Permanent%20Resident%3C%2Foption%3E%3Coption%3EWork%20Visa%3C%2Foption%3E%3Coption%3ENot%20currently%20eligible%20to%20work%3C%2Foption%3E%3C%2Fselect%3E%3Cbutton%20type%3D%22submit%22%3ESubmit%20application%3C%2Fbutton%3E%3C%2Fform%3E%3Cdiv%20id%3D%22submitted%22%3Enot%20submitted%3C%2Fdiv%3E%3C%2Fbody%3E%3C%2Fhtml%3E",
+			"profile": {
+				"firstName": "Aroha",
+				"workAuthorization": "New Zealand Permanent Resident visa"
+			},
+			"tags": ["offline", "work-eligibility", "controlled-option"],
+			"expectedStatus": "awaiting-human-confirmation",
+			"options": {
+				"maxCycles": 8
+			}
+		}
+	]
+}

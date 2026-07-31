@@ -3,3 +3,10 @@ logs/
 .playwright/
 .pnpm-store/
 data/
+benchmark/
+benchmarks/
+reports/
+docs/
+fixtures/
+.playwright-cli/
+.agents/

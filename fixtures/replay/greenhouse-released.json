@@ -1,0 +1,23 @@
+{
+	"name": "selected-historical-replay",
+	"version": "1",
+	"description": "Selected Greenhouse Re-Leased replay case for the lightweight cleanup workflow.",
+	"cases": [
+		{
+			"id": "greenhouse-released-7802196003",
+			"name": "Greenhouse Re-Leased application replay",
+			"url": "https://job-boards.greenhouse.io/released/jobs/7802196003",
+			"profilePath": "../../data/profile-full-stack.json",
+			"tags": ["job-application", "greenhouse", "historical-replay"],
+			"notes": "Replay case for location, work eligibility, referral source, salary, and final-submit safety behavior.",
+			"options": {
+				"headless": false,
+				"viewport": {
+					"width": 1365,
+					"height": 900
+				},
+				"maxCycles": 12
+			}
+		}
+	]
+}

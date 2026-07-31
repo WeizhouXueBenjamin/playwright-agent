@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "mode": "redacted-replay-candidate",
+  "runId": "run-synthetic-mvp",
+  "sourceUrlHash": "ee5332fd0044ab0153315c01bdf01f3bfdcdc37185fa5a4f3780ec110c581755",
+  "status": "needs-review",
+  "reasons": [
+    "manual-intervention"
+  ],
+  "fields": [],
+  "manualInterventions": [
+    {
+      "fieldIntent": "salary-expectation",
+      "fieldFingerprint": "synthetic-field",
+      "questionPreview": "Expected salary",
+      "optionCount": 0,
+      "reason": "salary-expectation-requires-explicit-answer"
+    }
+  ],
+  "failures": [],
+  "safetyStops": [],
+  "notes": "Review this candidate before moving it into fixtures/replay/offline-replay.json."
+}

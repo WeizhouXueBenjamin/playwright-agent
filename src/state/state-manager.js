@@ -1,6 +1,13 @@
 const { createInitialRuntimeState } = require("./runtime-state");
+const { assertRuntimeStateContract, assertRuntimeStatePatchContract } = require("../contracts/runtime-state");
 const {
 	buildObservationStatePatch,
+	buildDecisionGateStatePatch,
+	buildManualCompletionStatePatch,
+	buildReviewAnswerStatePatch,
+	buildReviewCheckpointStatePatch,
+	buildReviewPromptStatePatch,
+	buildSkippedFieldStatePatch,
 	buildSuccessfulActionStatePatch,
 	buildStatusStatePatch,
 } = require("./state-update-pipeline");
@@ -22,6 +29,36 @@ class StateManager {
 		return this.getState();
 	}
 
+	recordReviewPrompt(reviewPrompt, date = new Date()) {
+		this.applyPatch(buildReviewPromptStatePatch(this.state, reviewPrompt, date));
+		return this.getState();
+	}
+
+	recordReviewCheckpoint(checkpoint, date = new Date()) {
+		this.applyPatch(buildReviewCheckpointStatePatch(this.state, checkpoint, date));
+		return this.getState();
+	}
+
+	recordReviewAnswer(reviewAnswer, date = new Date()) {
+		this.applyPatch(buildReviewAnswerStatePatch(this.state, reviewAnswer, date));
+		return this.getState();
+	}
+
+	recordSkippedField(reviewPrompt, date = new Date()) {
+		this.applyPatch(buildSkippedFieldStatePatch(this.state, reviewPrompt, date));
+		return this.getState();
+	}
+
+	recordManualCompletion(reviewPrompt, date = new Date()) {
+		this.applyPatch(buildManualCompletionStatePatch(this.state, reviewPrompt, date));
+		return this.getState();
+	}
+
+	recordDecisionGateResult(gateResult, date = new Date()) {
+		this.applyPatch(buildDecisionGateStatePatch(this.state, gateResult, date));
+		return this.getState();
+	}
+
 	setExecutionStatus(status, date = new Date()) {
 		this.applyPatch(buildStatusStatePatch(status, date));
 		return this.getState();
@@ -32,11 +69,13 @@ class StateManager {
 	}
 
 	applyPatch(patch) {
+		assertRuntimeStatePatchContract(patch);
 		this.state = {
 			...this.state,
 			...patch,
 			updatedAt: patch.updatedAt || new Date().toISOString(),
 		};
+		assertRuntimeStateContract(this.state);
 	}
 }
 

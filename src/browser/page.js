@@ -17,6 +17,24 @@ async function openPage(browser, url, options = {}) {
 	return { context, page };
 }
 
+async function openPageInContext(context, url, options = {}) {
+	const {
+		navigationTimeoutMs = 45000,
+	} = options;
+
+	const page = await context.newPage();
+	page.setDefaultNavigationTimeout(navigationTimeoutMs);
+	page.setDefaultTimeout(navigationTimeoutMs);
+
+	await page.goto(url, {
+		waitUntil: "domcontentloaded",
+		timeout: navigationTimeoutMs,
+	});
+
+	return page;
+}
+
 module.exports = {
 	openPage,
+	openPageInContext,
 };
