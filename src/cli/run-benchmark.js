@@ -4,7 +4,7 @@ async function main() {
 	const [datasetPath] = process.argv.slice(2);
 
 	if (!datasetPath) {
-		throw new Error("Usage: npm run benchmark -- <dataset.json>");
+		throw new Error("Usage: pnpm benchmark -- <dataset.json>");
 	}
 
 	const result = await runBenchmark(datasetPath);

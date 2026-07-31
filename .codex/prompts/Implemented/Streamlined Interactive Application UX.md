@@ -5,7 +5,7 @@ Preserve unrelated worktree changes. If this task conflicts with project directi
 
 ## Goal
 
-Optimize `npm run apply -- <job-url>` for personal daily use.
+Optimize `pnpm apply -- <job-url>` for personal daily use.
 
 Priority:
 
@@ -198,9 +198,9 @@ Update only focused tests necessary to prove:
 Then run:
 
 ```bash
-npm run test:apply-cli
-npm run test:controller
-npm run test:mvp
+pnpm test:apply-cli
+pnpm test:controller
+pnpm test:mvp
 ```
 
 Run additional existing tests only when touched code requires them.

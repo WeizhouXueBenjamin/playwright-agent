@@ -1,13 +1,13 @@
 # Personal Job Application Assistant
 
-A local, personal job application assistant that helps complete online applications while keeping sensitive decisions and final submission under user control.
+A local, personal job application assistant built with Node.js, Playwright and Codex, that helps complete online applications while keeping sensitive decisions and final submission under user control.
 
 ## Setup
 
 Initialize the dedicated Chrome profile:
 
 ```bash
-npm run setup:chrome-profile
+pnpm setup:chrome-profile
 ```
 
 Use the opened Chrome window to sign in, complete MFA, and configure Chrome Autofill / Password Manager if needed.
@@ -19,7 +19,7 @@ Close Chrome when finished.
 Run:
 
 ```bash
-npm run apply -- <job-url>
+pnpm apply -- <job-url>
 ```
 
 By default, the assistant uses:
@@ -31,7 +31,7 @@ data/profile-full-stack.json
 To provide a custom profile or documents:
 
 ```bash
-npm run apply -- <job-url> <profile.json> [resume] [cover-letter]
+pnpm apply -- <job-url> <profile.json> [resume] [cover-letter]
 ```
 
 ## How It Works
@@ -54,12 +54,12 @@ The assistant never reads saved passwords and never submits an application autom
 ## Useful Commands
 
 ```bash
-npm run setup:chrome-profile
-npm run apply -- <job-url>
-npm run analyze:last-run
-npm run benchmark:core
-npm run benchmark:replay
-npm run test:mvp
+pnpm setup:chrome-profile
+pnpm apply -- <job-url>
+pnpm analyze:last-run
+pnpm benchmark:core
+pnpm benchmark:replay
+pnpm test:mvp
 ```
 
 ## Run Artifacts
@@ -73,7 +73,7 @@ logs/apply/run-*/run-artifact.json
 Use:
 
 ```bash
-npm run analyze:last-run
+pnpm analyze:last-run
 ```
 
 to inspect the latest run.

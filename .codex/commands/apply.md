@@ -16,7 +16,7 @@ Run the local, human-supervised job-application workflow for one user who remain
 Use the primary product command:
 
 ```bash
-npm run apply -- <job-url> [profile.json] [resume] [cover-letter]
+pnpm apply -- <job-url> [profile.json] [resume] [cover-letter]
 ```
 
 The goal is safe reduction of repetitive work, not unattended completion.

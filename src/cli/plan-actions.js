@@ -6,7 +6,7 @@ async function main() {
 	const [matchesPath] = process.argv.slice(2);
 
 	if (!matchesPath) {
-		throw new Error("Usage: npm run plan-actions -- <field-matches.json>");
+		throw new Error("Usage: pnpm plan-actions -- <field-matches.json>");
 	}
 
 	const matches = await readJson(matchesPath);

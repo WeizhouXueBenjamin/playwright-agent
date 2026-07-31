@@ -529,7 +529,7 @@ Cover:
 Run:
 
 ```bash
-npm run test:mvp
+pnpm test:mvp
 ```
 
 Also run any focused test command available for planner/controller/review modules. If browser installation, network, credentials, or sandboxing prevents a test from running, report the exact blocker and do not weaken assertions.

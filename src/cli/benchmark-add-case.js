@@ -4,7 +4,7 @@ const crypto = require("node:crypto");
 
 async function main() {
 	const [runId] = process.argv.slice(2);
-	if (!runId) throw new Error("Usage: npm run benchmark:add-case -- <run-id>");
+	if (!runId) throw new Error("Usage: pnpm benchmark:add-case -- <run-id>");
 
 	const artifactPath = path.join(process.cwd(), "logs", "apply", runId, "run-artifact.json");
 	const artifact = JSON.parse(await fs.readFile(artifactPath, "utf8"));

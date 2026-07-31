@@ -161,8 +161,8 @@ Acceptance:
 Tests:
 
 - run focused tests from earlier phases
-- run `npm run test:decision-cycle`
-- run `npm run test:partial-execution`
+- run `pnpm test:decision-cycle`
+- run `pnpm test:partial-execution`
 - run broader benchmark/RWVS tests if shared report or diagnostics code changes
 
 ---
@@ -552,10 +552,10 @@ Add focused tests proving:
 
 Run at minimum:
 
-- `npm run test:field-matching`
-- `npm run test:planner`
-- `npm run test:decision-cycle`
-- `npm run test:partial-execution`
+- `pnpm test:field-matching`
+- `pnpm test:planner`
+- `pnpm test:decision-cycle`
+- `pnpm test:partial-execution`
 
 Run broader tests if touched modules affect shared behavior.
 

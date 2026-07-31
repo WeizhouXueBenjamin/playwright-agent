@@ -473,20 +473,20 @@ Add focused tests for:
 - completed fields are not repeated
 - final Submit is never activated
 
-Add the focused suites to `npm run test:mvp`.
+Add the focused suites to `pnpm test:mvp`.
 
 Run at minimum:
 
 ```bash
-npm run test:controller
-npm run test:field-matching
-npm run test:decision-cycle
-npm run test:decision-gate
-npm run test:policy
-npm run test:state
-npm run test:executor
-npm run test:apply-cli
-npm run test:mvp
+pnpm test:controller
+pnpm test:field-matching
+pnpm test:decision-cycle
+pnpm test:decision-gate
+pnpm test:policy
+pnpm test:state
+pnpm test:executor
+pnpm test:apply-cli
+pnpm test:mvp
 ```
 
 ## Real-Run Validation

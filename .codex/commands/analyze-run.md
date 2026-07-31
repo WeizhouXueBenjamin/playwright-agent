@@ -18,7 +18,7 @@ This is a diagnostics workflow. It must not reopen the target site, interact wit
 Use the implemented command:
 
 ```bash
-npm run analyze:last-run
+pnpm analyze:last-run
 ```
 
 ## Inputs
@@ -95,7 +95,7 @@ Recommend `benchmark:add-case` only when the run contains reproducible evidence 
 Use:
 
 ```bash
-npm run benchmark:add-case -- <run-id>
+pnpm benchmark:add-case -- <run-id>
 ```
 
 Replay candidates must be redacted and reviewable. They must not contain selectors, credentials, cookies, raw secrets, full sensitive answers, resume contents, or generated personal prose.

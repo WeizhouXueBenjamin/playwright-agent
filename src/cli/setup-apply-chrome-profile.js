@@ -12,7 +12,7 @@ async function main() {
 	console.log([
 		"Opening the dedicated application Chrome profile without Playwright.",
 		"Sign in manually, complete any MFA, then close the entire Chrome window.",
-		"Do not run npm run apply until this window has closed.",
+		"Do not run pnpm apply until this window has closed.",
 		`Profile: ${APPLY_CHROME_USER_DATA_DIR}`,
 		"",
 	].join("\n"));
@@ -26,7 +26,7 @@ async function main() {
 		throw new Error(`Chrome profile setup exited with code ${exitCode}.`);
 	}
 
-	console.log("Dedicated Chrome profile closed. You can now run npm run apply.");
+	console.log("Dedicated Chrome profile closed. You can now run pnpm apply.");
 }
 
 function findInstalledChrome(options = {}) {

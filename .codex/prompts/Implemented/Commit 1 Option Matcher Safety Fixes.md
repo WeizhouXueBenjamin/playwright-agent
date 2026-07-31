@@ -358,11 +358,11 @@ Add tests proving:
 Run:
 
 ```bash
-npm run test:option-resolver
-npm run test:field-matching
-npm run test:executor
-npm run test:controller
-npm run test:mvp
+pnpm test:option-resolver
+pnpm test:field-matching
+pnpm test:executor
+pnpm test:controller
+pnpm test:mvp
 ```
 
 Also run:

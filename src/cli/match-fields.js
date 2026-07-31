@@ -6,7 +6,7 @@ async function main() {
 	const [semanticPagePath, profilePath] = process.argv.slice(2);
 
 	if (!semanticPagePath || !profilePath) {
-		throw new Error("Usage: npm run match-fields -- <semantic-page.json> <profile.json>");
+		throw new Error("Usage: pnpm match-fields -- <semantic-page.json> <profile.json>");
 	}
 
 	const [semanticPage, profile] = await Promise.all([

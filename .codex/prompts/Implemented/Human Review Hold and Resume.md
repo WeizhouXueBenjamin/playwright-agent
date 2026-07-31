@@ -15,7 +15,7 @@ Before planning or changing code:
 The production command:
 
 ```bash
-npm run apply -- https://job-boards.greenhouse.io/released/jobs/7802196003
+pnpm apply -- https://job-boards.greenhouse.io/released/jobs/7802196003
 ```
 
 reached a legitimate safety blocker:
@@ -183,7 +183,7 @@ This is the primary product path.
 
 Do not use `process.stdin.isTTY ? provider : null` as a silent behavior switch.
 
-An interactive terminal is required for production `apply`. If stdin is not a TTY, fail before reading the profile, creating a run, or opening the browser, and print an actionable message telling the user to run `npm run apply` directly in a terminal.
+An interactive terminal is required for production `apply`. If stdin is not a TTY, fail before reading the profile, creating a run, or opening the browser, and print an actionable message telling the user to run `pnpm apply` directly in a terminal.
 
 Do not implement a file handoff, second-terminal response command, HTTP server, WebSocket, queue, or detached browser fallback. A non-interactive command runner cannot provide inline human review and must not start the workflow.
 
@@ -298,11 +298,11 @@ Add focused tests for:
 Run at minimum:
 
 ```bash
-npm run test:controller
-npm run test:state
-npm run test:decision-cycle
-npm run test:policy
-npm run test:mvp
+pnpm test:controller
+pnpm test:state
+pnpm test:decision-cycle
+pnpm test:policy
+pnpm test:mvp
 ```
 
 Add any new focused CLI/transport test to `test:mvp`.
@@ -311,7 +311,7 @@ Add any new focused CLI/transport test to `test:mvp`.
 
 The change is complete when:
 
-- an interactive `npm run apply -- <job-url>` holds at review and accepts user input
+- an interactive `pnpm apply -- <job-url>` holds at review and accepts user input
 - the same browser context and page remain alive during the wait
 - the user response is applied or manually verified, then the run continues
 - multiple review blockers can be handled without relaunching

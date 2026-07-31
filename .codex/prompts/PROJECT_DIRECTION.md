@@ -62,7 +62,7 @@ User provides job URL
 The primary command should remain simple:
 
 ```bash
-npm run apply -- <job-url>
+pnpm apply -- <job-url>
 ```
 
 ---
@@ -458,10 +458,10 @@ real run
 Recommended commands:
 
 ```bash
-npm run analyze:last-run
-npm run benchmark:core
-npm run benchmark:replay
-npm run benchmark:add-case -- <run-id>
+pnpm analyze:last-run
+pnpm benchmark:core
+pnpm benchmark:replay
+pnpm benchmark:add-case -- <run-id>
 ```
 
 ## Core Benchmark

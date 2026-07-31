@@ -119,15 +119,15 @@ Do not automatically modify production source code.
 Provide one primary command:
 
 ```bash
-npm run apply -- <job-url>
+pnpm apply -- <job-url>
 ```
 
 Optional flags may include:
 
 ```bash
-npm run apply -- <job-url> --headed
-npm run apply -- <job-url> --profile ./profile.json
-npm run apply -- <job-url> --resume ./documents/resume.pdf
+pnpm apply -- <job-url> --headed
+pnpm apply -- <job-url> --profile ./profile.json
+pnpm apply -- <job-url> --resume ./documents/resume.pdf
 ```
 
 The workflow should:
@@ -464,7 +464,7 @@ Allow the user to provide a job-description file manually when page extraction i
 Add a console command or workflow step:
 
 ```bash
-npm run generate:cover-letter -- <job-url>
+pnpm generate:cover-letter -- <job-url>
 ```
 
 Or run it automatically when a cover letter field is detected.
@@ -640,7 +640,7 @@ Each field record should include:
 Add:
 
 ```bash
-npm run analyze:last-run
+pnpm analyze:last-run
 ```
 
 The analyzer should classify issues using a small stable taxonomy:
@@ -673,8 +673,8 @@ It must not automatically modify source code.
 Provide:
 
 ```bash
-npm run benchmark:core
-npm run benchmark:replay
+pnpm benchmark:core
+pnpm benchmark:replay
 ```
 
 ## Core Suite
@@ -713,7 +713,7 @@ Only preserve cases representing:
 Optional command:
 
 ```bash
-npm run benchmark:add-case -- <run-id>
+pnpm benchmark:add-case -- <run-id>
 ```
 
 Do not convert every run into a permanent fixture.

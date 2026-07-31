@@ -12,7 +12,7 @@ async function main() {
 	const [url, profilePath = DEFAULT_PROFILE_PATH, resumePath = "", coverLetterPath = ""] = process.argv.slice(2);
 
 	if (!url) {
-		throw new Error("Usage: npm run apply -- <url> [profile.json] [resume] [cover-letter]");
+		throw new Error("Usage: pnpm apply -- <url> [profile.json] [resume] [cover-letter]");
 	}
 
 	const reviewCheckpointProvider = createReviewCheckpointProvider({

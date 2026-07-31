@@ -469,14 +469,14 @@ Add one lightweight replay case based on the supplied real-run failure. Do not s
 Run at minimum:
 
 ```bash
-npm run test:field-matching
-npm run test:controller
-npm run test:review-checkpoint
-npm run test:executor
-npm run test:apply-cli
-npm run benchmark:core
-npm run benchmark:replay
-npm run test:mvp
+pnpm test:field-matching
+pnpm test:controller
+pnpm test:review-checkpoint
+pnpm test:executor
+pnpm test:apply-cli
+pnpm benchmark:core
+pnpm benchmark:replay
+pnpm test:mvp
 ```
 
 These code-level checks are the completion gate. Pure matcher tests, controller tests, replay coverage, and MVP regression must pass.
@@ -486,7 +486,7 @@ These code-level checks are the completion gate. Pure matcher tests, controller 
 After required code validation passes, attempt:
 
 ```bash
-npm run apply -- https://job-boards.greenhouse.io/released/jobs/7802196003
+pnpm apply -- https://job-boards.greenhouse.io/released/jobs/7802196003
 ```
 
 For the live run, verify and report:
@@ -522,7 +522,7 @@ The live run is best-effort because the page, job availability, network, CAPTCHA
 4. add uniqueness, negation, and conflict checks
 5. integrate the same resolver with native and custom selection without changing browser capability contracts
 6. add focused positive and rejection tests
-7. run focused tests and `npm run test:mvp`
+7. run focused tests and `pnpm test:mvp`
 8. inspect the diff before proceeding
 
 ### Commit 2
@@ -531,7 +531,7 @@ The live run is best-effort because the page, job availability, network, CAPTCHA
 2. route unresolved semantic matches into the existing checkpoint model
 3. improve compact artifact evidence
 4. add controller and replay coverage
-5. run required focused tests, benchmarks, and `npm run test:mvp`
+5. run required focused tests, benchmarks, and `pnpm test:mvp`
 6. attempt the guarded live run and classify any failure as code-caused or external
 
 Do not clean unrelated deprecated code as part of this task. Report any newly discovered cleanup opportunities separately.

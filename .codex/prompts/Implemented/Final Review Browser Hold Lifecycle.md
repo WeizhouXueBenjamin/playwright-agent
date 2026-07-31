@@ -16,7 +16,7 @@ Before planning or changing code:
 The production command:
 
 ```bash
-npm run apply -- https://job-boards.greenhouse.io/released/jobs/7802196003
+pnpm apply -- https://job-boards.greenhouse.io/released/jobs/7802196003
 ```
 
 successfully resolved the field-review checkpoints and reached the final submission boundary:
@@ -43,7 +43,7 @@ Confirm this root cause with a focused failing test before implementation.
 
 ## Objective
 
-For an interactive `npm run apply -- <job-url>` run, hold the live browser open at the final submission boundary so the user can inspect or manually submit the application.
+For an interactive `pnpm apply -- <job-url>` run, hold the live browser open at the final submission boundary so the user can inspect or manually submit the application.
 
 The agent must remain permanently paused during this hold. No CLI decision may authorize or trigger automated final submission.
 
@@ -288,7 +288,7 @@ Do not restore full `result` JSON output. Full diagnostics remain in `run-artifa
 ### Phase 3 - Validation
 
 - Run focused controller, CLI, artifact/report, and final-submit policy tests.
-- Run `npm run test:mvp`.
+- Run `pnpm test:mvp`.
 - Perform a guarded live run only with the user present because privacy, salary, and manual submission decisions cannot be automated by the test harness.
 
 Live Greenhouse validation is best effort. Network, job closure, CAPTCHA, or page changes must be reported but must not invalidate passing deterministic tests.
@@ -313,11 +313,11 @@ Add focused coverage for:
 Run at minimum:
 
 ```bash
-npm run test:controller
-npm run test:apply-cli
-npm run test:policy
-npm run test:state
-npm run test:mvp
+pnpm test:controller
+pnpm test:apply-cli
+pnpm test:policy
+pnpm test:state
+pnpm test:mvp
 ```
 
 Add any new focused test command to `test:mvp` only if a new test file is introduced.
@@ -367,7 +367,7 @@ The task is complete when:
 - non-interactive runs do not wait;
 - artifacts remain `ready-for-review` compatible and do not infer manual submission;
 - ordinary checkpoint resume behavior is unchanged;
-- focused tests and `npm run test:mvp` pass;
+- focused tests and `pnpm test:mvp` pass;
 - no Node, Chromium, or readline process/handle remains after exit.
 
 ## Final Report

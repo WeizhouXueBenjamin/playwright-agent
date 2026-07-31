@@ -41,7 +41,7 @@ This is a product-validation milestone, not another architecture cleanup. Do not
 
 Verify these claims against the repository before changing code. Treat them as orientation, not assumptions:
 
-- `npm run apply -- <job-url>` is the primary production entry point.
+- `pnpm apply -- <job-url>` is the primary production entry point.
 - final-submit protection, action verification, one-retry recovery, compact artifacts, and run-scoped review answers already exist.
 - a review answer can already resume the active controller loop, but the CLI does not yet expose the complete Accept/Edit/Skip/Manual interaction.
 - `analyze:last-run` exists and produces advisory diagnostics.
@@ -309,7 +309,7 @@ Generated text is always a draft. Require Accept/Edit/Skip before writing it int
 Support one coherent workflow, either:
 
 ```bash
-npm run generate:cover-letter -- <job-url>
+pnpm generate:cover-letter -- <job-url>
 ```
 
 or an in-flow suggestion when a cover-letter field is observed. Prefer reuse of the same job-context and generation boundary.
@@ -336,10 +336,10 @@ Full Codex product capability may be claimed only when the real opt-in adapter s
 Make these commands accurate and operational:
 
 ```bash
-npm run benchmark:core
-npm run benchmark:replay
-npm run analyze:last-run
-npm run benchmark:add-case -- <run-id>
+pnpm benchmark:core
+pnpm benchmark:replay
+pnpm analyze:last-run
+pnpm benchmark:add-case -- <run-id>
 ```
 
 `benchmark:core` must be fully offline and use authored fixtures covering:
@@ -409,7 +409,7 @@ A real-site run passes only if the fields actually reached were handled correctl
 
 ## Required Verification
 
-Run focused tests after each gate and `npm run test:mvp` before completion. Add integration tests to the active MVP suite rather than leaving them as undocumented one-off commands.
+Run focused tests after each gate and `pnpm test:mvp` before completion. Add integration tests to the active MVP suite rather than leaving them as undocumented one-off commands.
 
 At minimum preserve or add coverage for:
 
@@ -433,7 +433,7 @@ If a test cannot run because of browser installation, network policy, credential
 
 This milestone is complete when:
 
-- `npm run apply -- <job-url>` has one coherent user-facing flow
+- `pnpm apply -- <job-url>` has one coherent user-facing flow
 - the workflow remains a local, single-user, human-supervised tool with zero additional paid API requirements
 - the offline vertical slice covers single-page, multi-step, review, blocker, recovery, upload, and submit protection behavior
 - stable aliases are bounded and unfamiliar semantics do not expand regex ontology

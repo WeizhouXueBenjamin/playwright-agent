@@ -189,7 +189,7 @@ The runtime should use one clear entry point.
 Recommended CLI shape:
 
 ```bash
-npm run apply -- <job-url>
+pnpm apply -- <job-url>
 ```
 
 The simplified runtime should not require:
@@ -498,11 +498,11 @@ Add a historical case only when it represents:
 Recommended commands:
 
 ```bash
-npm run apply -- <job-url>
-npm run analyze:last-run
-npm run benchmark:core
-npm run benchmark:replay
-npm run benchmark:add-case -- <run-id>
+pnpm apply -- <job-url>
+pnpm analyze:last-run
+pnpm benchmark:core
+pnpm benchmark:replay
+pnpm benchmark:add-case -- <run-id>
 ```
 
 ---

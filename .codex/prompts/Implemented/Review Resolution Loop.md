@@ -372,16 +372,16 @@ It requires:
 
 Run focused tests first:
 
-- `npm run test:planner`
-- `npm run test:decision-cycle`
-- `npm run test:controller`
-- `npm run test:partial-execution`
-- `npm run test:state`
+- `pnpm test:planner`
+- `pnpm test:decision-cycle`
+- `pnpm test:controller`
+- `pnpm test:partial-execution`
+- `pnpm test:state`
 
 Run V2/RWVS tests if diagnostics or report fields change:
 
-- `npm run test:metrics-v2`
-- `npm run test:rwvs`
+- `pnpm test:metrics-v2`
+- `pnpm test:rwvs`
 
 ---
 

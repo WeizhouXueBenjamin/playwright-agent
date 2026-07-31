@@ -18,15 +18,15 @@ This command is for validation, not for active job applications and not for live
 Use the implemented commands:
 
 ```bash
-npm run test:mvp
-npm run benchmark:core
-npm run benchmark:replay
+pnpm test:mvp
+pnpm benchmark:core
+pnpm benchmark:replay
 ```
 
 Use replay-case creation only when justified by a completed run artifact:
 
 ```bash
-npm run benchmark:add-case -- <run-id>
+pnpm benchmark:add-case -- <run-id>
 ```
 
 ## Scope
@@ -43,7 +43,7 @@ Validation must remain aligned with the current product:
 
 ## Offline Core Benchmark
 
-`npm run benchmark:core` must use authored local fixtures only.
+`pnpm benchmark:core` must use authored local fixtures only.
 
 It should cover practical workflow behavior such as:
 
@@ -60,7 +60,7 @@ Do not point the default core benchmark at a public URL.
 
 ## Replay Benchmark
 
-`npm run benchmark:replay` must use selected anonymized replay cases only.
+`pnpm benchmark:replay` must use selected anonymized replay cases only.
 
 Add a replay case only when a run represents:
 

@@ -9,7 +9,7 @@ async function main() {
 			status: "no-runs-found",
 			submitted: false,
 			message: "No apply run artifacts found under logs/apply.",
-			nextAction: "Run npm run apply -- <job-url> before analyzing the latest run.",
+			nextAction: "Run pnpm apply -- <job-url> before analyzing the latest run.",
 		}, null, 2));
 		return;
 	}
